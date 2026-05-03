@@ -1,21 +1,21 @@
 /**
  * Application state store with localStorage persistence.
  *
- * Manages: AI provider selection (Gemini/DeepSeek/Groq), API key per provider,
- * and custom prompts for Title/Description.
+ * Manages: AI provider selection (Gemini/Groq/Cerebras),
+ * API key per provider, and custom prompts for Title/Description.
  */
 
 import { createContext, useContext } from "react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type AIProvider = "gemini" | "deepseek" | "groq";
+export type AIProvider = "gemini" | "groq" | "cerebras";
 
 export interface AppSettings {
   provider: AIProvider;
   geminiKey: string;
-  deepseekKey: string;
   groqKey: string;
+  cerebrasKey: string;
   titlePrompt: string;
   descPrompt: string;
 }
@@ -96,6 +96,9 @@ Responda APENAS com o texto da description. Sem aspas, sem introduções, sem ex
 
 const STORAGE_KEY = "serp-studio-settings";
 
+/** Providers that were removed — migrate to gemini */
+const DEPRECATED_PROVIDERS = ["deepseek", "gemma", "openrouter"];
+
 // ─── Persistence helpers ────────────────────────────────────────────────────
 
 export function loadSettings(): AppSettings {
@@ -111,11 +114,17 @@ export function loadSettings(): AppSettings {
         p.includes("You are an SEO") || p.includes("Rewrite the") ||
         !p.includes("<regras_inviolaveis>");
 
+      // Migrate deprecated providers to gemini
+      const savedProvider = parsed.provider as string;
+      const provider = DEPRECATED_PROVIDERS.includes(savedProvider)
+        ? "gemini"
+        : (savedProvider as AIProvider) ?? "gemini";
+
       return {
-        provider: (parsed.provider as AIProvider) ?? "gemini",
+        provider,
         geminiKey: (parsed.geminiKey as string) ?? (parsed.apiKey as string) ?? "",
-        deepseekKey: (parsed.deepseekKey as string) ?? "",
         groqKey: (parsed.groqKey as string) ?? "",
+        cerebrasKey: (parsed.cerebrasKey as string) ?? "",
         titlePrompt: isDefaultish(parsed.titlePrompt) ? DEFAULT_TITLE_PROMPT : (parsed.titlePrompt as string),
         descPrompt: isDefaultish(parsed.descPrompt) ? DEFAULT_DESC_PROMPT : (parsed.descPrompt as string),
       };
@@ -126,8 +135,8 @@ export function loadSettings(): AppSettings {
   return {
     provider: "gemini",
     geminiKey: "",
-    deepseekKey: "",
     groqKey: "",
+    cerebrasKey: "",
     titlePrompt: DEFAULT_TITLE_PROMPT,
     descPrompt: DEFAULT_DESC_PROMPT,
   };
@@ -145,8 +154,8 @@ export function saveSettings(settings: AppSettings): void {
 export function getActiveKey(settings: AppSettings): string {
   switch (settings.provider) {
     case "gemini": return settings.geminiKey;
-    case "deepseek": return settings.deepseekKey;
     case "groq": return settings.groqKey;
+    case "cerebras": return settings.cerebrasKey;
   }
 }
 
@@ -155,8 +164,8 @@ export function getActiveKey(settings: AppSettings): string {
 export type SettingsAction =
   | { type: "SET_PROVIDER"; payload: AIProvider }
   | { type: "SET_GEMINI_KEY"; payload: string }
-  | { type: "SET_DEEPSEEK_KEY"; payload: string }
   | { type: "SET_GROQ_KEY"; payload: string }
+  | { type: "SET_CEREBRAS_KEY"; payload: string }
   | { type: "SET_TITLE_PROMPT"; payload: string }
   | { type: "SET_DESC_PROMPT"; payload: string }
   | { type: "RESET_PROMPTS" };
@@ -173,11 +182,11 @@ export function settingsReducer(
     case "SET_GEMINI_KEY":
       next = { ...state, geminiKey: action.payload };
       break;
-    case "SET_DEEPSEEK_KEY":
-      next = { ...state, deepseekKey: action.payload };
-      break;
     case "SET_GROQ_KEY":
       next = { ...state, groqKey: action.payload };
+      break;
+    case "SET_CEREBRAS_KEY":
+      next = { ...state, cerebrasKey: action.payload };
       break;
     case "SET_TITLE_PROMPT":
       next = { ...state, titlePrompt: action.payload };

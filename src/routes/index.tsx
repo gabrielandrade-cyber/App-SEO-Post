@@ -3,7 +3,8 @@ import { useReducer, useState, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import {
   Sparkles, Lock, Upload, Wand2, Loader2, X, FileText,
-  RotateCcw, Gem, Bot, Zap, Inbox, Settings2, Download, Check,
+  RotateCcw, Gem, Zap, Inbox, Settings2, Download, Check,
+  Cpu,
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -88,7 +89,10 @@ function Index() {
     const res = await optimizeField(settings.provider, getActiveKey(settings), prompt, row.url, field);
 
     if (res.error) {
-      toast.error("Erro da IA", { description: res.error });
+      toast.error("Erro da IA", {
+        description: res.error,
+        duration: res.retryAfter ? res.retryAfter + 2000 : 5000,
+      });
       setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, [loadKey]: false } : r));
       return;
     }
@@ -113,7 +117,10 @@ function Index() {
 
       const res = await optimizeField(settings.provider, activeKey, prompt, row.url, field);
       if (res.error) {
-        toast.error(`Erro na linha ${row.id}`, { description: res.error });
+        toast.error(`Erro na linha ${row.id}`, {
+          description: res.error,
+          duration: res.retryAfter ? res.retryAfter + 2000 : 5000,
+        });
         setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, [loadKey]: false } : r));
       } else {
         setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, [field]: res.text, [loadKey]: false, [doneKey]: true } : r));
@@ -181,8 +188,8 @@ function Index() {
             <div className="grid grid-cols-3 gap-2">
               {([
                 { id: "gemini" as AIProvider, label: "Gemini", Icon: Gem, color: "from-sky-400 to-indigo-500" },
-                { id: "deepseek" as AIProvider, label: "DeepSeek", Icon: Bot, color: "from-emerald-400 to-teal-500" },
                 { id: "groq" as AIProvider, label: "Groq", Icon: Zap, color: "from-amber-400 to-orange-500" },
+                { id: "cerebras" as AIProvider, label: "Cerebras", Icon: Cpu, color: "from-violet-400 to-purple-500" },
               ]).map((opt) => {
                 const active = settings.provider === opt.id;
                 return (
@@ -214,15 +221,6 @@ function Index() {
                   </div>
                 </div>
               )}
-              {settings.provider === "deepseek" && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-white/70">Chave DeepSeek (platform.deepseek.com)</label>
-                  <div className="relative">
-                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-                    <input type="password" value={settings.deepseekKey} onChange={(e) => dispatch({ type: "SET_DEEPSEEK_KEY", payload: e.target.value })} placeholder="sk-•••" className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10" />
-                  </div>
-                </div>
-              )}
               {settings.provider === "groq" && (
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-white/70">Chave Groq (console.groq.com)</label>
@@ -232,6 +230,17 @@ function Index() {
                   </div>
                 </div>
               )}
+              {settings.provider === "cerebras" && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-white/70">Chave Cerebras (cerebras.ai)</label>
+                  <div className="relative">
+                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                    <input type="password" value={settings.cerebrasKey} onChange={(e) => dispatch({ type: "SET_CEREBRAS_KEY", payload: e.target.value })} placeholder="csk-•••" className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10" />
+                  </div>
+                  <p className="mt-1 text-[10px] text-white/40">Free Tier: 30 RPM • 60k TPM</p>
+                </div>
+              )}
+
             </div>
           </GlassCard>
 
@@ -371,7 +380,7 @@ function Index() {
                   </>
                 )}
                 <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-wider text-white/60">
-                  {settings.provider === "gemini" ? "Gemini" : settings.provider === "deepseek" ? "DeepSeek" : "Groq"}
+                  {({ gemini: "Gemini", groq: "Groq", cerebras: "Cerebras" } as Record<string, string>)[settings.provider] ?? settings.provider}
                 </span>
               </div>
             </div>
