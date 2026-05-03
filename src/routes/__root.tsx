@@ -1,5 +1,6 @@
-import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
+import { Outlet, Link, createRootRoute, HeadContent, Scripts, useRouterState } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
+import { Sparkles, BookOpen, LayoutDashboard } from "lucide-react";
 
 import appCss from "../styles.css?url";
 
@@ -30,16 +31,20 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
+      { title: "OPTMOS" },
+      { name: "description", content: "OPTMOS - Liquid intelligence for your metadata" },
+      { name: "author", content: "Gabriel Andrade" },
+      { property: "og:title", content: "OPTMOS" },
       { property: "og:description", content: "Lovable Generated Project" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
+      {
+        rel: "icon",
+        href: "/logo.svg",
+      },
       {
         rel: "stylesheet",
         href: appCss,
@@ -66,8 +71,11 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
+  const routerState = useRouterState();
+  const currentPath = routerState.location.pathname;
+
   return (
-    <>
+    <div className="dark min-h-screen text-foreground relative overflow-hidden">
       {/* SVG filter for Liquid Glass distortion — referenced by .liquid-glass-card::after */}
       <svg
         width="0"
@@ -95,8 +103,69 @@ function RootComponent() {
           </filter>
         </defs>
       </svg>
+
+      {/* iOS 26 Liquid Glass — deep navy wallpaper with diagonal light streaks */}
+      <div className="fixed inset-0 -z-20 bg-black" />
+      <div
+        className="fixed inset-0 -z-10"
+        style={{
+          backgroundImage: [
+            "linear-gradient(115deg, transparent 30%, rgba(40, 90, 200, 0.45) 55%, rgba(20, 50, 140, 0.25) 70%, transparent 90%)",
+            "linear-gradient(295deg, transparent 40%, rgba(80, 140, 220, 0.18) 65%, transparent 85%)",
+            "radial-gradient(ellipse 80% 60% at 75% 35%, rgba(30, 80, 180, 0.55), transparent 70%)",
+            "radial-gradient(ellipse 70% 50% at 25% 80%, rgba(40, 100, 200, 0.4), transparent 70%)",
+            "radial-gradient(ellipse 50% 40% at 90% 90%, rgba(60, 120, 220, 0.3), transparent 70%)",
+            "linear-gradient(180deg, #050814 0%, #060a1c 50%, #04060f 100%)",
+          ].join(","),
+        }}
+      />
+
+      {/* Shared Header */}
+      <header className="sticky top-0 z-20 border-b border-white/5 bg-slate-950/40 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-4">
+            <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-400 to-fuchsia-500 shadow-[0_0_30px_-5px_rgba(168,85,247,0.6)]">
+              <img src="/logo.svg" alt="OPTMOS Logo" className="h-10 w-10 object-contain" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-white">OPTMOS</h1>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <nav className="flex items-center rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur-xl">
+              <Link
+                to="/"
+                className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium transition-all duration-300 ${currentPath === "/"
+                  ? "bg-white/10 text-white shadow-[0_0_15px_-5px_rgba(255,255,255,0.3)]"
+                  : "text-white/60 hover:text-white hover:bg-white/[0.05]"
+                  }`}
+              >
+                <LayoutDashboard className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Workspace</span>
+              </Link>
+              <Link
+                to="/como-usar"
+                className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium transition-all duration-300 ${currentPath === "/como-usar"
+                  ? "bg-white/10 text-white shadow-[0_0_15px_-5px_rgba(255,255,255,0.3)]"
+                  : "text-white/60 hover:text-white hover:bg-white/[0.05]"
+                  }`}
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Como Usar</span>
+              </Link>
+            </nav>
+
+            <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70 backdrop-blur-xl md:flex">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+              Operational
+            </div>
+          </div>
+        </div>
+      </header>
+
       <Outlet />
       <Toaster richColors position="top-right" />
-    </>
+    </div>
   );
 }

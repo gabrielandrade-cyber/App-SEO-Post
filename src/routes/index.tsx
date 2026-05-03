@@ -144,42 +144,7 @@ function Index() {
   }, [rows]);
 
   return (
-    <div className="dark min-h-screen text-foreground relative overflow-hidden">
-      {/* iOS 26 Liquid Glass — deep navy wallpaper with diagonal light streaks */}
-      <div className="fixed inset-0 -z-20 bg-black" />
-      <div
-        className="fixed inset-0 -z-10"
-        style={{
-          backgroundImage: [
-            "linear-gradient(115deg, transparent 30%, rgba(40, 90, 200, 0.45) 55%, rgba(20, 50, 140, 0.25) 70%, transparent 90%)",
-            "linear-gradient(295deg, transparent 40%, rgba(80, 140, 220, 0.18) 65%, transparent 85%)",
-            "radial-gradient(ellipse 80% 60% at 75% 35%, rgba(30, 80, 180, 0.55), transparent 70%)",
-            "radial-gradient(ellipse 70% 50% at 25% 80%, rgba(40, 100, 200, 0.4), transparent 70%)",
-            "radial-gradient(ellipse 50% 40% at 90% 90%, rgba(60, 120, 220, 0.3), transparent 70%)",
-            "linear-gradient(180deg, #050814 0%, #060a1c 50%, #04060f 100%)",
-          ].join(","),
-        }}
-      />
-
-      {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-white/5 bg-slate-950/40 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-400 to-fuchsia-500 shadow-[0_0_30px_-5px_rgba(168,85,247,0.6)]">
-              <Sparkles className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight">SERP Optimizer AI</h1>
-              <p className="text-xs text-white/50">Liquid intelligence for your metadata</p>
-            </div>
-          </div>
-          <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70 backdrop-blur-xl md:flex">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-            All systems operational
-          </div>
-        </div>
-      </header>
-
+    <>
       <main className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-6 py-8 lg:grid-cols-[320px_1fr]">
         {/* Sidebar */}
         <aside className="space-y-6">
@@ -187,9 +152,9 @@ function Index() {
             <h2 className="mb-4 text-sm font-semibold text-white/90">AI Provider</h2>
             <div className="grid grid-cols-3 gap-2">
               {([
-                { id: "gemini" as AIProvider, label: "Gemini", Icon: Gem, color: "from-sky-400 to-indigo-500" },
-                { id: "groq" as AIProvider, label: "Groq", Icon: Zap, color: "from-amber-400 to-orange-500" },
-                { id: "cerebras" as AIProvider, label: "Cerebras", Icon: Cpu, color: "from-violet-400 to-purple-500" },
+                { id: "gemini" as AIProvider, label: "Gemini", img: "/google-gemini-icon.webp", color: "from-slate-800 to-slate-900" },
+                { id: "groq" as AIProvider, label: "Groq", img: "/groq.png", color: "from-slate-800 to-slate-900" },
+                { id: "cerebras" as AIProvider, label: "Cerebras", img: "/cerebras-color.png", color: "from-slate-800 to-slate-900" },
               ]).map((opt) => {
                 const active = settings.provider === opt.id;
                 return (
@@ -202,8 +167,8 @@ function Index() {
                         : "border-white/10 bg-white/[0.03] hover:bg-white/[0.07]"
                     }`}
                   >
-                    <div className={`flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br ${opt.color}`}>
-                      <opt.Icon className="h-3.5 w-3.5 text-white" />
+                    <div className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${opt.color} border border-white/10 shadow-inner`}>
+                      <img src={opt.img} alt={opt.label} className="h-5 w-5 object-contain drop-shadow-sm" />
                     </div>
                     <span className="font-medium text-white/90">{opt.label}</span>
                   </button>
@@ -488,6 +453,6 @@ function Index() {
           </GlassCard>
         </section>
       </main>
-    </div>
+    </>
   );
 }
