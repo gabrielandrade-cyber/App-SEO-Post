@@ -5,7 +5,7 @@
  * API key per provider, and custom prompts for Title/Description.
  */
 
-import { createContext, useContext } from "react";
+import React, { createContext, useContext } from "react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -208,12 +208,24 @@ export function settingsReducer(
   return next;
 }
 
-// ─── Context (optional) ─────────────────────────────────────────────────────
+// ─── Context ──────────────────────────────────────────────────────────────────
 
-export const SettingsContext = createContext<AppSettings | null>(null);
+export const SettingsContext = createContext<{
+  settings: AppSettings;
+  dispatch: React.Dispatch<SettingsAction>;
+} | null>(null);
 
-export function useSettings(): AppSettings {
+export function useSettings() {
   const ctx = useContext(SettingsContext);
   if (!ctx) throw new Error("useSettings must be used within SettingsContext");
   return ctx;
+}
+
+export function SettingsProvider({ children }: { children: React.ReactNode }) {
+  const [settings, dispatch] = React.useReducer(settingsReducer, undefined, loadSettings);
+  return (
+    <SettingsContext.Provider value={{ settings, dispatch }}>
+      {children}
+    </SettingsContext.Provider>
+  );
 }

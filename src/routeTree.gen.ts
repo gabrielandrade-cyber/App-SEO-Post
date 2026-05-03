@@ -9,9 +9,21 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as ImagensRouteImport } from './routes/imagens'
+import { Route as ComoUsarImagensRouteImport } from './routes/como-usar-imagens'
 import { Route as ComoUsarRouteImport } from './routes/como-usar'
 import { Route as IndexRouteImport } from './routes/index'
 
+const ImagensRoute = ImagensRouteImport.update({
+  id: '/imagens',
+  path: '/imagens',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ComoUsarImagensRoute = ComoUsarImagensRouteImport.update({
+  id: '/como-usar-imagens',
+  path: '/como-usar-imagens',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ComoUsarRoute = ComoUsarRouteImport.update({
   id: '/como-usar',
   path: '/como-usar',
@@ -26,31 +38,53 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/como-usar': typeof ComoUsarRoute
+  '/como-usar-imagens': typeof ComoUsarImagensRoute
+  '/imagens': typeof ImagensRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/como-usar': typeof ComoUsarRoute
+  '/como-usar-imagens': typeof ComoUsarImagensRoute
+  '/imagens': typeof ImagensRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/como-usar': typeof ComoUsarRoute
+  '/como-usar-imagens': typeof ComoUsarImagensRoute
+  '/imagens': typeof ImagensRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/como-usar'
+  fullPaths: '/' | '/como-usar' | '/como-usar-imagens' | '/imagens'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/como-usar'
-  id: '__root__' | '/' | '/como-usar'
+  to: '/' | '/como-usar' | '/como-usar-imagens' | '/imagens'
+  id: '__root__' | '/' | '/como-usar' | '/como-usar-imagens' | '/imagens'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ComoUsarRoute: typeof ComoUsarRoute
+  ComoUsarImagensRoute: typeof ComoUsarImagensRoute
+  ImagensRoute: typeof ImagensRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/imagens': {
+      id: '/imagens'
+      path: '/imagens'
+      fullPath: '/imagens'
+      preLoaderRoute: typeof ImagensRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/como-usar-imagens': {
+      id: '/como-usar-imagens'
+      path: '/como-usar-imagens'
+      fullPath: '/como-usar-imagens'
+      preLoaderRoute: typeof ComoUsarImagensRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/como-usar': {
       id: '/como-usar'
       path: '/como-usar'
@@ -71,6 +105,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ComoUsarRoute: ComoUsarRoute,
+  ComoUsarImagensRoute: ComoUsarImagensRoute,
+  ImagensRoute: ImagensRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

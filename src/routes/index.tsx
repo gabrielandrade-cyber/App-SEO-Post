@@ -11,7 +11,7 @@ import {
   DialogDescription, DialogFooter, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  loadSettings, settingsReducer, getActiveKey, DEFAULT_TITLE_PROMPT,
+  useSettings, getActiveKey, DEFAULT_TITLE_PROMPT,
   DEFAULT_DESC_PROMPT, type CsvRow, type AIProvider,
 } from "@/lib/store";
 import { parseCSV } from "@/lib/csv-parser";
@@ -21,7 +21,7 @@ export const Route = createFileRoute("/")({ component: Index });
 
 function GlassCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`liquid-glass-card border border-white/10 bg-white/[0.04] shadow-[0_8px_40px_-12px_rgba(0,0,0,0.5)] ${className}`}>
+    <div className={`rounded-3xl border border-white/5 bg-white/[0.02] p-6 shadow-2xl backdrop-blur-2xl ${className}`}>
       {children}
     </div>
   );
@@ -35,7 +35,7 @@ function CharCount({ value, max }: { value: string; max: number }) {
 }
 
 function Index() {
-  const [settings, dispatch] = useReducer(settingsReducer, undefined, loadSettings);
+  const { settings, dispatch } = useSettings();
   const [fileName, setFileName] = useState<string | null>(null);
   const [rows, setRows] = useState<CsvRow[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);

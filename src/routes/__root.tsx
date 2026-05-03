@@ -1,8 +1,9 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts, useRouterState } from "@tanstack/react-router";
 import { Toaster } from "@/components/ui/sonner";
-import { Sparkles, BookOpen, LayoutDashboard } from "lucide-react";
+import { Sparkles, BookOpen, LayoutDashboard, ImageIcon, TextSearch } from "lucide-react";
 
 import appCss from "../styles.css?url";
+import { SettingsProvider } from "../lib/store";
 
 function NotFoundComponent() {
   return (
@@ -74,8 +75,13 @@ function RootComponent() {
   const routerState = useRouterState();
   const currentPath = routerState.location.pathname;
 
+  const isImagensRoute = currentPath.startsWith("/imagens") || currentPath.startsWith("/como-usar-imagens");
+  const workspacePath = isImagensRoute ? "/imagens" : "/";
+  const tutorialPath = isImagensRoute ? "/como-usar-imagens" : "/como-usar";
+
   return (
-    <div className="dark min-h-screen text-foreground relative overflow-hidden">
+    <SettingsProvider>
+      <div className="dark min-h-screen text-foreground relative overflow-hidden">
       {/* SVG filter for Liquid Glass distortion — referenced by .liquid-glass-card::after */}
       <svg
         width="0"
@@ -122,8 +128,9 @@ function RootComponent() {
 
       {/* Shared Header */}
       <header className="sticky top-0 z-20 border-b border-white/5 bg-slate-950/40 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
+        <div className="mx-auto grid grid-cols-3 items-center px-6 py-4 max-w-7xl">
+          {/* Logo (Esquerda) */}
+          <div className="flex items-center gap-4 justify-self-start">
             <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-400 to-fuchsia-500 shadow-[0_0_30px_-5px_rgba(168,85,247,0.6)]">
               <img src="/logo.svg" alt="OPTMOS Logo" className="h-10 w-10 object-contain" />
             </div>
@@ -132,11 +139,38 @@ function RootComponent() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          {/* Seletor Central (SERP vs Imagens) */}
+          <div className="flex justify-center justify-self-center">
             <nav className="flex items-center rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur-xl">
               <Link
                 to="/"
-                className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium transition-all duration-300 ${currentPath === "/"
+                className={`flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all duration-300 ${!isImagensRoute
+                  ? "bg-white/10 text-white shadow-[0_0_15px_-5px_rgba(255,255,255,0.3)]"
+                  : "text-white/60 hover:text-white hover:bg-white/[0.05]"
+                  }`}
+              >
+                <TextSearch className="h-4 w-4" />
+                <span className="hidden sm:inline">SERP Optimizer</span>
+              </Link>
+              <Link
+                to="/imagens"
+                className={`flex items-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition-all duration-300 ${isImagensRoute
+                  ? "bg-white/10 text-white shadow-[0_0_15px_-5px_rgba(255,255,255,0.3)]"
+                  : "text-white/60 hover:text-white hover:bg-white/[0.05]"
+                  }`}
+              >
+                <ImageIcon className="h-4 w-4" />
+                <span className="hidden sm:inline">Image Optimizer</span>
+              </Link>
+            </nav>
+          </div>
+
+          {/* Menu Contextual (Direita) */}
+          <div className="flex items-center gap-4 justify-self-end">
+            <nav className="flex items-center rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur-xl">
+              <Link
+                to={workspacePath}
+                className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium transition-all duration-300 ${currentPath === workspacePath
                   ? "bg-white/10 text-white shadow-[0_0_15px_-5px_rgba(255,255,255,0.3)]"
                   : "text-white/60 hover:text-white hover:bg-white/[0.05]"
                   }`}
@@ -145,8 +179,8 @@ function RootComponent() {
                 <span className="hidden sm:inline">Workspace</span>
               </Link>
               <Link
-                to="/como-usar"
-                className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium transition-all duration-300 ${currentPath === "/como-usar"
+                to={tutorialPath}
+                className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-medium transition-all duration-300 ${currentPath === tutorialPath
                   ? "bg-white/10 text-white shadow-[0_0_15px_-5px_rgba(255,255,255,0.3)]"
                   : "text-white/60 hover:text-white hover:bg-white/[0.05]"
                   }`}
@@ -155,11 +189,6 @@ function RootComponent() {
                 <span className="hidden sm:inline">Como Usar</span>
               </Link>
             </nav>
-
-            <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/70 backdrop-blur-xl md:flex">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-              Operational
-            </div>
           </div>
         </div>
       </header>
@@ -167,5 +196,6 @@ function RootComponent() {
       <Outlet />
       <Toaster richColors position="top-right" />
     </div>
+    </SettingsProvider>
   );
 }
