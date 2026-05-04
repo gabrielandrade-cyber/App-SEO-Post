@@ -146,7 +146,7 @@ async function callGemini(
       geminiWorkingModel = model;
       return { ok: true, quotaZero: false, response: { text, success: true } };
     } catch (err) {
-      console.error(`[Gemini/${model}] Erro de rede:`, err);
+      console.error(`[Gemini/${model}] Erro de rede:`, err instanceof Error ? err.message : "desconhecido");
       return { ok: false, quotaZero: false, response: { text: "", error: `[Gemini] Erro de rede: ${err instanceof Error ? err.message : "desconhecido"}`, success: false } };
     }
   };
@@ -171,7 +171,7 @@ async function callGemini(
 
     return { text: "", error: `[Gemini] Nenhum modelo disponível. Testados: ${tried.join(", ")}. Troque para Groq, Cerebras ou OpenRouter.`, success: false };
   } catch (err) {
-    console.error("[Gemini] Erro inesperado:", err);
+    console.error("[Gemini] Erro inesperado:", err instanceof Error ? err.message : "Erro inesperado");
     return { text: "", error: `[Gemini] ${err instanceof Error ? err.message : "Erro inesperado"}`, success: false };
   }
 }
@@ -292,7 +292,7 @@ export async function optimizeField(
     );
   } catch (err) {
     // Ultimate safety net — never let the function crash
-    console.error(`[optimizeField] Erro fatal não capturado (provider: ${provider}):`, err);
+    console.error(`[optimizeField] Erro fatal não capturado (provider: ${provider}):`, err instanceof Error ? err.message : "desconhecido");
     return {
       text: "",
       error: `Erro inesperado ao chamar ${provider}. Verifique os logs do servidor.`,

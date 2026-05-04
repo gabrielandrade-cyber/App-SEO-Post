@@ -104,7 +104,7 @@ export const optimizeVision = createServerFn({ method: "POST" })
         throw new Error("O servidor da IA demorou demasiado tempo a responder (504 Timeout).");
       }
 
-      console.error(`[VisionServerFn] Erro no ${provider}:`, err);
+      console.error(`[VisionServerFn] Erro no ${provider}:`, message);
       throw new Error(`[${provider}] ${message}`);
     }
   });
