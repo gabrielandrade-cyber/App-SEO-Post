@@ -10,6 +10,7 @@
  * custom baseURL. System prompts are ALWAYS sent with role: "system".
  */
 
+import { createServerFn } from "@tanstack/react-start";
 import OpenAI from "openai";
 import type { AIProvider } from "./store";
 
@@ -20,6 +21,14 @@ export interface AIResponse {
   error?: string;
   success?: boolean;
   retryAfter?: number;
+}
+
+interface OptimizeFieldPayload {
+  provider: AIProvider;
+  apiKey: string;
+  systemPrompt: string;
+  targetUrl: string;
+  field: OptimizeField;
 }
 
 export function delay(ms: number): Promise<void> {
@@ -179,6 +188,11 @@ async function callGemini(
 // ─── OpenAI-compatible providers (Groq, Cerebras) ───────────────
 
 const OPENAI_PROVIDERS = {
+  openai: {
+    baseURL: undefined,
+    model: "gpt-4o-mini",
+    label: "ChatGPT",
+  },
   groq: {
     baseURL: "https://api.groq.com/openai/v1",
     model: "llama-3.3-70b-versatile",
@@ -195,13 +209,13 @@ type OpenAIProviderKey = keyof typeof OPENAI_PROVIDERS;
 
 /**
  * Creates an OpenAI client configured for the given provider.
- * Uses the official `openai` npm package with custom baseURL.
+ * Uses the official OpenAI API for ChatGPT and custom baseURL for compatible providers.
  */
 function createClient(provider: OpenAIProviderKey, apiKey: string): OpenAI {
+  const config = OPENAI_PROVIDERS[provider];
   return new OpenAI({
     apiKey,
-    baseURL: OPENAI_PROVIDERS[provider].baseURL,
-    dangerouslyAllowBrowser: true,
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
   });
 }
 
@@ -270,27 +284,27 @@ async function callOpenAIProvider(
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
-export async function optimizeField(
-  provider: AIProvider,
-  apiKey: string,
-  systemPrompt: string,
-  targetUrl: string,
-  field: OptimizeField,
-): Promise<AIResponse> {
-  try {
-    if (provider === "gemini") {
-      return await callGemini(apiKey, systemPrompt, targetUrl, field);
-    }
+export const optimizeField = createServerFn({ method: "POST" })
+  .handler(async ({ data }: any): Promise<AIResponse> => {
+    const { provider, apiKey, systemPrompt, targetUrl, field } = data as OptimizeFieldPayload;
+    try {
+      if (!apiKey?.trim()) {
+        return { text: "", error: `[${provider}] API Key nao fornecida.`, success: false };
+      }
+
+      if (provider === "gemini") {
+        return await callGemini(apiKey, systemPrompt, targetUrl, field);
+      }
 
     // Groq, Cerebras → all use OpenAI SDK
-    return await callOpenAIProvider(
-      provider as OpenAIProviderKey,
-      apiKey,
-      systemPrompt,
-      targetUrl,
-      field,
-    );
-  } catch (err) {
+      return await callOpenAIProvider(
+        provider as OpenAIProviderKey,
+        apiKey,
+        systemPrompt,
+        targetUrl,
+        field,
+      );
+    } catch (err) {
     // Ultimate safety net — never let the function crash
     console.error(`[optimizeField] Erro fatal não capturado (provider: ${provider}):`, err instanceof Error ? err.message : "desconhecido");
     return {
@@ -300,4 +314,4 @@ export async function optimizeField(
       retryAfter: 3000,
     };
   }
-}
+});

@@ -1,7 +1,7 @@
 /**
  * Application state store with localStorage persistence.
  *
- * Manages: AI provider selection (Gemini/Groq/Cerebras),
+ * Manages: AI provider selection (Gemini/Groq/Cerebras/ChatGPT),
  * API key per provider, and custom prompts for Title/Description.
  */
 
@@ -9,13 +9,14 @@ import React, { createContext, useContext } from "react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type AIProvider = "gemini" | "groq" | "cerebras";
+export type AIProvider = "gemini" | "groq" | "cerebras" | "openai";
 
 export interface AppSettings {
   provider: AIProvider;
   geminiKey: string;
   groqKey: string;
   cerebrasKey: string;
+  openaiKey: string;
   titlePrompt: string;
   descPrompt: string;
 }
@@ -25,6 +26,10 @@ export interface CsvRow {
   url: string;
   title: string;
   description: string;
+  newTitle?: string;
+  newDescription?: string;
+  titleJustification?: string;
+  descriptionJustification?: string;
   loadingTitle?: boolean;
   loadingDesc?: boolean;
   optimizedTitle?: boolean;
@@ -98,6 +103,7 @@ const STORAGE_KEY = "serp-studio-settings";
 
 /** Providers that were removed — migrate to gemini */
 const DEPRECATED_PROVIDERS = ["deepseek", "gemma", "openrouter"];
+const SUPPORTED_PROVIDERS: AIProvider[] = ["gemini", "groq", "cerebras", "openai"];
 
 // ─── Persistence helpers ────────────────────────────────────────────────────
 
@@ -115,16 +121,18 @@ export function loadSettings(): AppSettings {
         !p.includes("<regras_inviolaveis>");
 
       // Migrate deprecated providers to gemini
-      const savedProvider = parsed.provider as string;
-      const provider = DEPRECATED_PROVIDERS.includes(savedProvider)
+      const savedProvider = typeof parsed.provider === "string" ? parsed.provider : "";
+      const provider = DEPRECATED_PROVIDERS.includes(savedProvider) ||
+        !SUPPORTED_PROVIDERS.includes(savedProvider as AIProvider)
         ? "gemini"
-        : (savedProvider as AIProvider) ?? "gemini";
+        : (savedProvider as AIProvider);
 
       return {
         provider,
         geminiKey: (parsed.geminiKey as string) ?? (parsed.apiKey as string) ?? "",
         groqKey: (parsed.groqKey as string) ?? "",
         cerebrasKey: (parsed.cerebrasKey as string) ?? "",
+        openaiKey: (parsed.openaiKey as string) ?? (parsed.chatgptKey as string) ?? "",
         titlePrompt: isDefaultish(parsed.titlePrompt) ? DEFAULT_TITLE_PROMPT : (parsed.titlePrompt as string),
         descPrompt: isDefaultish(parsed.descPrompt) ? DEFAULT_DESC_PROMPT : (parsed.descPrompt as string),
       };
@@ -137,6 +145,7 @@ export function loadSettings(): AppSettings {
     geminiKey: "",
     groqKey: "",
     cerebrasKey: "",
+    openaiKey: "",
     titlePrompt: DEFAULT_TITLE_PROMPT,
     descPrompt: DEFAULT_DESC_PROMPT,
   };
@@ -156,6 +165,7 @@ export function getActiveKey(settings: AppSettings): string {
     case "gemini": return settings.geminiKey;
     case "groq": return settings.groqKey;
     case "cerebras": return settings.cerebrasKey;
+    case "openai": return settings.openaiKey;
   }
 }
 
@@ -166,6 +176,7 @@ export type SettingsAction =
   | { type: "SET_GEMINI_KEY"; payload: string }
   | { type: "SET_GROQ_KEY"; payload: string }
   | { type: "SET_CEREBRAS_KEY"; payload: string }
+  | { type: "SET_OPENAI_KEY"; payload: string }
   | { type: "SET_TITLE_PROMPT"; payload: string }
   | { type: "SET_DESC_PROMPT"; payload: string }
   | { type: "RESET_PROMPTS" };
@@ -187,6 +198,9 @@ export function settingsReducer(
       break;
     case "SET_CEREBRAS_KEY":
       next = { ...state, cerebrasKey: action.payload };
+      break;
+    case "SET_OPENAI_KEY":
+      next = { ...state, openaiKey: action.payload };
       break;
     case "SET_TITLE_PROMPT":
       next = { ...state, titlePrompt: action.payload };

@@ -42,12 +42,12 @@ export function parseCSV(file: File): Promise<ParseResult> {
           return;
         }
 
-        // Need at least 2 columns (URL + Title); 3rd (Description) is optional
-        if (rawRows[0].length < 2) {
+        // Need at least 1 column (URL); Title and Description are optional
+        if (rawRows[0].length < 1) {
           resolve({
             rows: [],
             errors: [
-              "O CSV precisa de pelo menos 2 colunas (URL e Title). Verifique o formato do ficheiro.",
+              "O CSV precisa de pelo menos 1 coluna (URL). Verifique o formato do ficheiro.",
             ],
           });
           return;
@@ -60,7 +60,7 @@ export function parseCSV(file: File): Promise<ParseResult> {
         const looksLikeUrl =
           firstCell.includes("http") ||
           firstCell.includes("www.") ||
-          (firstCell.includes(".") && firstCell.includes("/"));
+          firstCell.includes(".");
 
         const dataRows = looksLikeUrl ? rawRows : rawRows.slice(1);
 

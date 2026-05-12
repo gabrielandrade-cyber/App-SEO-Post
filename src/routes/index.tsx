@@ -34,6 +34,57 @@ function CharCount({ value, max }: { value: string; max: number }) {
   return <span className={`ml-2 text-[10px] font-mono ${color}`}>{len}/{max}</span>;
 }
 
+const PROVIDER_LABELS: Record<AIProvider, string> = {
+  gemini: "Gemini",
+  groq: "Groq",
+  cerebras: "Cerebras",
+  openai: "ChatGPT",
+};
+
+const AI_PROVIDER_OPTIONS: Array<{
+  id: AIProvider;
+  label: string;
+  img?: string;
+  Icon?: typeof Sparkles;
+  color: string;
+}> = [
+  { id: "gemini", label: "Gemini", img: "/google-gemini-icon.webp", color: "from-slate-800 to-slate-900" },
+  { id: "groq", label: "Groq", img: "/groq.png", color: "from-slate-800 to-slate-900" },
+  { id: "cerebras", label: "Cerebras", img: "/cerebras-color.png", color: "from-slate-800 to-slate-900" },
+  { id: "openai", label: "ChatGPT", Icon: Sparkles, color: "from-emerald-700 to-slate-900" },
+];
+
+export function sanitizeCsvFileName(name: string): string {
+  const withoutExtension = name.replace(/\.[^/.]+$/, "");
+  const cleaned = withoutExtension
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "");
+
+  return cleaned || "serp-controle";
+}
+
+function escapeCsvValue(value?: string): string {
+  const text = (value ?? "").trim();
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+export function buildControlCsv(rows: CsvRow[]): string {
+  return rows
+    .map((row) => [
+      row.url,
+      row.newTitle ?? "",
+      row.newDescription ?? "",
+      row.titleJustification ?? "",
+      row.descriptionJustification ?? "",
+      row.title,
+      row.description,
+    ].map(escapeCsvValue).join(","))
+    .join("\n");
+}
+
 function Index() {
   const { settings, dispatch } = useSettings();
   const [fileName, setFileName] = useState<string | null>(null);
@@ -43,7 +94,7 @@ function Index() {
   // ─── Pre-flight: check API key before any AI call ─────────────────
   const preflight = useCallback((): boolean => {
     if (!getActiveKey(settings).trim()) {
-      toast.error("API Key ausente", { description: `Defina a sua chave de API ${settings.provider} no painel lateral antes de otimizar.` });
+      toast.error("API Key ausente", { description: `Defina a sua chave de API ${PROVIDER_LABELS[settings.provider]} no painel lateral antes de otimizar.` });
       return false;
     }
     return true;
@@ -80,13 +131,25 @@ function Index() {
     if (!preflight()) return;
     const loadKey = field === "title" ? "loadingTitle" : "loadingDesc";
     const doneKey = field === "title" ? "optimizedTitle" : "optimizedDesc";
+    const resultKey = field === "title" ? "newTitle" : "newDescription";
     setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, [loadKey]: true } : r));
 
     const row = rows.find((r) => r.id === rowId);
-    if (!row) return;
+    if (!row) {
+      setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, [loadKey]: false } : r));
+      return;
+    }
 
     const prompt = field === "title" ? settings.titlePrompt : settings.descPrompt;
-    const res = await optimizeField(settings.provider, getActiveKey(settings), prompt, row.url, field);
+    const res = await (optimizeField as any)({
+      data: {
+        provider: settings.provider,
+        apiKey: getActiveKey(settings),
+        systemPrompt: prompt,
+        targetUrl: row.url,
+        field,
+      },
+    });
 
     if (res.error) {
       toast.error("Erro da IA", {
@@ -96,7 +159,7 @@ function Index() {
       setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, [loadKey]: false } : r));
       return;
     }
-    setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, [field]: res.text, [loadKey]: false, [doneKey]: true } : r));
+    setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, [resultKey]: res.text, [loadKey]: false, [doneKey]: true } : r));
     toast.success(`${field === "title" ? "Title" : "Description"} otimizado!`);
   }, [rows, settings, preflight]);
 
@@ -105,6 +168,7 @@ function Index() {
     if (!preflight()) return;
     const loadKey = field === "title" ? "loadingTitle" : "loadingDesc";
     const doneKey = field === "title" ? "optimizedTitle" : "optimizedDesc";
+    const resultKey = field === "title" ? "newTitle" : "newDescription";
     setRows((prev) => prev.map((r) => ({ ...r, [loadKey]: true })));
 
     const prompt = field === "title" ? settings.titlePrompt : settings.descPrompt;
@@ -115,7 +179,15 @@ function Index() {
       // Rate-limit protection: 2s delay between requests
       if (i > 0) await delay(BULK_DELAY_MS);
 
-      const res = await optimizeField(settings.provider, activeKey, prompt, row.url, field);
+      const res = await (optimizeField as any)({
+        data: {
+          provider: settings.provider,
+          apiKey: activeKey,
+          systemPrompt: prompt,
+          targetUrl: row.url,
+          field,
+        },
+      });
       if (res.error) {
         toast.error(`Erro na linha ${row.id}`, {
           description: res.error,
@@ -123,7 +195,7 @@ function Index() {
         });
         setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, [loadKey]: false } : r));
       } else {
-        setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, [field]: res.text, [loadKey]: false, [doneKey]: true } : r));
+        setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, [resultKey]: res.text, [loadKey]: false, [doneKey]: true } : r));
       }
     }
     toast.success(`Todos os ${field === "title" ? "Titles" : "Descriptions"} foram processados!`);
@@ -131,17 +203,21 @@ function Index() {
 
   // ─── Download CSV ─────────────────────────────────────────────────
   const downloadCsv = useCallback(() => {
-    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const header = ["URL", "Title", "Description"].join(",");
-    const body = rows.map((r) => [esc(r.url), esc(r.title), esc(r.description)].join(",")).join("\n");
-    const blob = new Blob([`${header}\n${body}`], { type: "text/csv;charset=utf-8;" });
+    if (rows.length === 0) {
+      toast.error("Nao ha dados para exportar.");
+      return;
+    }
+
+    const csv = buildControlCsv(rows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "serp-optimized.csv";
+    a.download = `${sanitizeCsvFileName(fileName ?? "serp-optimized")}-controle.csv`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [rows]);
+    toast.success("Exportacao para controle iniciada.");
+  }, [rows, fileName]);
 
   return (
     <>
@@ -150,13 +226,10 @@ function Index() {
         <aside className="space-y-6">
           <GlassCard className="p-5">
             <h2 className="mb-4 text-sm font-semibold text-white/90">AI Provider</h2>
-            <div className="grid grid-cols-3 gap-2">
-              {([
-                { id: "gemini" as AIProvider, label: "Gemini", img: "/google-gemini-icon.webp", color: "from-slate-800 to-slate-900" },
-                { id: "groq" as AIProvider, label: "Groq", img: "/groq.png", color: "from-slate-800 to-slate-900" },
-                { id: "cerebras" as AIProvider, label: "Cerebras", img: "/cerebras-color.png", color: "from-slate-800 to-slate-900" },
-              ]).map((opt) => {
+            <div className="grid grid-cols-2 gap-2">
+              {AI_PROVIDER_OPTIONS.map((opt) => {
                 const active = settings.provider === opt.id;
+                const Icon = opt.Icon;
                 return (
                   <button
                     key={opt.id}
@@ -168,7 +241,11 @@ function Index() {
                     }`}
                   >
                     <div className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${opt.color} border border-white/10 shadow-inner`}>
-                      <img src={opt.img} alt={opt.label} className="h-5 w-5 object-contain drop-shadow-sm" />
+                      {opt.img ? (
+                        <img src={opt.img} alt={opt.label} className="h-5 w-5 object-contain drop-shadow-sm" />
+                      ) : Icon ? (
+                        <Icon className="h-5 w-5 text-emerald-100 drop-shadow-sm" />
+                      ) : null}
                     </div>
                     <span className="font-medium text-white/90">{opt.label}</span>
                   </button>
@@ -193,6 +270,16 @@ function Index() {
                     <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
                     <input type="password" value={settings.groqKey} onChange={(e) => dispatch({ type: "SET_GROQ_KEY", payload: e.target.value })} placeholder="gsk_•••" className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10" />
                   </div>
+                </div>
+              )}
+              {settings.provider === "openai" && (
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-white/70">Chave ChatGPT/OpenAI (platform.openai.com)</label>
+                  <div className="relative">
+                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                    <input type="password" value={settings.openaiKey} onChange={(e) => dispatch({ type: "SET_OPENAI_KEY", payload: e.target.value })} placeholder="sk-..." className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10" />
+                  </div>
+                  <p className="mt-1 text-[10px] text-white/40">Modelo: gpt-4o-mini</p>
                 </div>
               )}
               {settings.provider === "cerebras" && (
@@ -345,7 +432,7 @@ function Index() {
                   </>
                 )}
                 <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-wider text-white/60">
-                  {({ gemini: "Gemini", groq: "Groq", cerebras: "Cerebras" } as Record<string, string>)[settings.provider] ?? settings.provider}
+                  {PROVIDER_LABELS[settings.provider]}
                 </span>
               </div>
             </div>
@@ -357,8 +444,10 @@ function Index() {
                     <thead className="sticky top-0 bg-white/[0.04] backdrop-blur-2xl">
                       <tr className="text-[11px] uppercase tracking-wider text-white/50">
                         <th className="px-6 py-3 font-medium">URL</th>
-                        <th className="px-6 py-3 font-medium">Current Title</th>
-                        <th className="px-6 py-3 font-medium">Meta Description</th>
+                        <th className="px-6 py-3 font-medium">Titulo atual</th>
+                        <th className="px-6 py-3 font-medium">Novo titulo</th>
+                        <th className="px-6 py-3 font-medium">Descricao atual</th>
+                        <th className="px-6 py-3 font-medium">Nova descricao</th>
                         <th className="px-6 py-3 text-right font-medium">Actions</th>
                       </tr>
                     </thead>
@@ -373,13 +462,25 @@ function Index() {
                               {row.url.replace("https://", "")}
                             </span>
                           </td>
-                          <td className="max-w-[260px] px-6 py-4">
-                            <p className="line-clamp-2 text-xs text-white/90">{row.title}</p>
+                          <td className="max-w-[220px] px-6 py-4">
+                            <p className="line-clamp-2 text-xs text-white/70">{row.title}</p>
                             <CharCount value={row.title} max={60} />
                           </td>
-                          <td className="max-w-[320px] px-6 py-4">
+                          <td className="max-w-[240px] px-6 py-4">
+                            <p className={`line-clamp-2 text-xs ${row.newTitle ? "text-white/90" : "text-white/30"}`}>
+                              {row.newTitle || "Ainda nao gerado"}
+                            </p>
+                            <CharCount value={row.newTitle ?? ""} max={60} />
+                          </td>
+                          <td className="max-w-[280px] px-6 py-4">
                             <p className="line-clamp-2 text-xs text-white/70">{row.description}</p>
                             <CharCount value={row.description} max={155} />
+                          </td>
+                          <td className="max-w-[300px] px-6 py-4">
+                            <p className={`line-clamp-2 text-xs ${row.newDescription ? "text-white/90" : "text-white/30"}`}>
+                              {row.newDescription || "Ainda nao gerada"}
+                            </p>
+                            <CharCount value={row.newDescription ?? ""} max={155} />
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex justify-end gap-1.5">
@@ -435,7 +536,7 @@ function Index() {
                     className="liquid-glass-button inline-flex items-center gap-2 rounded-full border border-emerald-300/30 px-4 py-2 text-xs font-semibold text-white"
                   >
                     <Download className="h-3.5 w-3.5 text-emerald-300" />
-                    Baixar tudo (.csv)
+                    Exportar para Controle
                   </button>
                 </div>
               </>
