@@ -128,7 +128,8 @@ export function loadSettings(): AppSettings {
       const isDefaultish = (p: unknown) =>
         !p || typeof p !== "string" || p.length < 100 ||
         p.includes("You are an SEO") || p.includes("Rewrite the") ||
-        !p.includes("<regras_inviolaveis>");
+        !p.includes("<regras_inviolaveis>") ||
+        !p.includes("OBRIGATORIAMENTE em formato JSON");
 
       // Migrate deprecated providers to gemini
       const savedProvider = typeof parsed.provider === "string" ? parsed.provider : "";
