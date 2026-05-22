@@ -68,20 +68,24 @@ export function sanitizeCsvFileName(name: string): string {
 
 function escapeCsvValue(value?: string): string {
   const text = (value ?? "").trim();
-  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  if (text.length === 0) return "";
+  return `"${text.replace(/"/g, '""')}"`;
 }
 
 export function buildControlCsv(rows: CsvRow[]): string {
   return rows
-    .map((row) => [
-      row.url,
-      row.newTitle ?? "",
-      row.newDescription ?? "",
-      row.titleJustification ?? "",
-      row.descriptionJustification ?? "",
-      row.title,
-      row.description,
-    ].map(escapeCsvValue).join(","))
+    .map((row) => {
+      const fixed: string[] = [
+        row.url ?? "",
+        row.newTitle ?? "",
+        row.newDescription ?? "",
+        row.titleJustification ?? "",
+        row.descriptionJustification ?? "",
+        row.title ?? "",
+        row.description ?? "",
+      ];
+      return fixed.map(escapeCsvValue).join(",");
+    })
     .join("\n");
 }
 
@@ -209,7 +213,8 @@ function Index() {
     }
 
     const csv = buildControlCsv(rows);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
