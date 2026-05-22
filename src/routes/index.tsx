@@ -136,6 +136,7 @@ function Index() {
     const loadKey = field === "title" ? "loadingTitle" : "loadingDesc";
     const doneKey = field === "title" ? "optimizedTitle" : "optimizedDesc";
     const resultKey = field === "title" ? "newTitle" : "newDescription";
+    const justificationKey = field === "title" ? "titleJustification" : "descriptionJustification";
     setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, [loadKey]: true } : r));
 
     const row = rows.find((r) => r.id === rowId);
@@ -163,7 +164,7 @@ function Index() {
       setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, [loadKey]: false } : r));
       return;
     }
-    setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, [resultKey]: res.text, [loadKey]: false, [doneKey]: true } : r));
+    setRows((prev) => prev.map((r) => r.id === rowId ? { ...r, [resultKey]: res.text, [justificationKey]: res.justification, [loadKey]: false, [doneKey]: true } : r));
     toast.success(`${field === "title" ? "Title" : "Description"} otimizado!`);
   }, [rows, settings, preflight]);
 
@@ -173,6 +174,7 @@ function Index() {
     const loadKey = field === "title" ? "loadingTitle" : "loadingDesc";
     const doneKey = field === "title" ? "optimizedTitle" : "optimizedDesc";
     const resultKey = field === "title" ? "newTitle" : "newDescription";
+    const justificationKey = field === "title" ? "titleJustification" : "descriptionJustification";
     setRows((prev) => prev.map((r) => ({ ...r, [loadKey]: true })));
 
     const prompt = field === "title" ? settings.titlePrompt : settings.descPrompt;
@@ -199,7 +201,7 @@ function Index() {
         });
         setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, [loadKey]: false } : r));
       } else {
-        setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, [resultKey]: res.text, [loadKey]: false, [doneKey]: true } : r));
+        setRows((prev) => prev.map((r) => r.id === row.id ? { ...r, [resultKey]: res.text, [justificationKey]: res.justification, [loadKey]: false, [doneKey]: true } : r));
       }
     }
     toast.success(`Todos os ${field === "title" ? "Titles" : "Descriptions"} foram processados!`);
