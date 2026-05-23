@@ -13,11 +13,32 @@
  */
 
 import Papa from "papaparse";
+import {
+  putCsvRows,
+  resetCsvData,
+  setCsvRowCount,
+} from "./db";
 import type { CsvRow } from "./store";
 
 export interface ParseResult {
   rows: CsvRow[];
   errors: string[];
+}
+
+export interface ImportProgress {
+  imported: number;
+}
+
+export interface ImportResult {
+  rowsImported: number;
+  errors: string[];
+}
+
+const FLUSH_SIZE = 1000;
+
+function looksLikeUrl(value: string): boolean {
+  const firstCell = value.trim().toLowerCase();
+  return firstCell.includes("http") || firstCell.includes("www.") || firstCell.includes(".");
 }
 
 /**
@@ -56,13 +77,7 @@ export function parseCSV(file: File): Promise<ParseResult> {
         // ─── Detect if the first row is a header row ──────────────────
         // Heuristic: if the first cell looks like a URL (contains "." or "http")
         // then there's no header row. Otherwise, skip the first row as a header.
-        const firstCell = (rawRows[0][0] ?? "").trim().toLowerCase();
-        const looksLikeUrl =
-          firstCell.includes("http") ||
-          firstCell.includes("www.") ||
-          firstCell.includes(".");
-
-        const dataRows = looksLikeUrl ? rawRows : rawRows.slice(1);
+        const dataRows = looksLikeUrl(rawRows[0][0] ?? "") ? rawRows : rawRows.slice(1);
 
         // ─── Map positional columns to typed rows ─────────────────────
         const rows: CsvRow[] = dataRows
@@ -83,6 +98,93 @@ export function parseCSV(file: File): Promise<ParseResult> {
       },
       error(err) {
         resolve({ rows: [], errors: [`Erro ao ler o CSV: ${err.message}`] });
+      },
+    });
+  });
+}
+
+export async function importCSVToIndexedDB(
+  file: File,
+  onProgress?: (progress: ImportProgress) => void,
+): Promise<ImportResult> {
+  await resetCsvData(file.name);
+
+  return new Promise((resolve) => {
+    const errors: string[] = [];
+    let buffer: CsvRow[] = [];
+    let imported = 0;
+    let nextId = 1;
+    let firstRowChecked = false;
+    let settled = false;
+    let pendingFlush = Promise.resolve();
+
+    const flush = async () => {
+      if (buffer.length === 0) return;
+      const rowsToStore = buffer;
+      buffer = [];
+      await putCsvRows(rowsToStore);
+      await setCsvRowCount(imported);
+      onProgress?.({ imported });
+    };
+
+    const finish = async () => {
+      if (settled) return;
+      settled = true;
+      await pendingFlush;
+      await flush();
+      await setCsvRowCount(imported);
+
+      if (imported === 0 && errors.length === 0) {
+        errors.push("Nenhuma linha valida encontrada no CSV.");
+      }
+
+      resolve({ rowsImported: imported, errors });
+    };
+
+    Papa.parse<string[]>(file, {
+      header: false,
+      skipEmptyLines: true,
+      worker: file.size > 2 * 1024 * 1024,
+      step(result, parser) {
+        const cols = result.data;
+
+        if (!firstRowChecked) {
+          firstRowChecked = true;
+
+          if (!cols || cols.length < 1) {
+            errors.push("O CSV precisa de pelo menos 1 coluna (URL).");
+            parser.abort();
+            void finish();
+            return;
+          }
+
+          if (!looksLikeUrl(cols[0] ?? "")) return;
+        }
+
+        const url = (cols[0] ?? "").trim();
+        if (!url) return;
+
+        buffer.push({
+          id: nextId++,
+          url,
+          title: (cols[1] ?? "").trim(),
+          description: (cols[2] ?? "").trim(),
+        });
+        imported += 1;
+
+        if (buffer.length >= FLUSH_SIZE) {
+          parser.pause();
+          pendingFlush = pendingFlush
+            .then(flush)
+            .then(() => parser.resume());
+        }
+      },
+      complete() {
+        void finish();
+      },
+      error(err) {
+        errors.push(`Erro ao ler o CSV: ${err.message}`);
+        void finish();
       },
     });
   });

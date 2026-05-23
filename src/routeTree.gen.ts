@@ -13,6 +13,7 @@ import { Route as ImagensRouteImport } from './routes/imagens'
 import { Route as ComoUsarImagensRouteImport } from './routes/como-usar-imagens'
 import { Route as ComoUsarRouteImport } from './routes/como-usar'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiOptimizeBatchRouteImport } from './routes/api/optimize-batch'
 
 const ImagensRoute = ImagensRouteImport.update({
   id: '/imagens',
@@ -34,18 +35,25 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiOptimizeBatchRoute = ApiOptimizeBatchRouteImport.update({
+  id: '/api/optimize-batch',
+  path: '/api/optimize-batch',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/como-usar': typeof ComoUsarRoute
   '/como-usar-imagens': typeof ComoUsarImagensRoute
   '/imagens': typeof ImagensRoute
+  '/api/optimize-batch': typeof ApiOptimizeBatchRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/como-usar': typeof ComoUsarRoute
   '/como-usar-imagens': typeof ComoUsarImagensRoute
   '/imagens': typeof ImagensRoute
+  '/api/optimize-batch': typeof ApiOptimizeBatchRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +61,30 @@ export interface FileRoutesById {
   '/como-usar': typeof ComoUsarRoute
   '/como-usar-imagens': typeof ComoUsarImagensRoute
   '/imagens': typeof ImagensRoute
+  '/api/optimize-batch': typeof ApiOptimizeBatchRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/como-usar' | '/como-usar-imagens' | '/imagens'
+  fullPaths:
+    | '/'
+    | '/como-usar'
+    | '/como-usar-imagens'
+    | '/imagens'
+    | '/api/optimize-batch'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/como-usar' | '/como-usar-imagens' | '/imagens'
-  id: '__root__' | '/' | '/como-usar' | '/como-usar-imagens' | '/imagens'
+  to:
+    | '/'
+    | '/como-usar'
+    | '/como-usar-imagens'
+    | '/imagens'
+    | '/api/optimize-batch'
+  id:
+    | '__root__'
+    | '/'
+    | '/como-usar'
+    | '/como-usar-imagens'
+    | '/imagens'
+    | '/api/optimize-batch'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +92,7 @@ export interface RootRouteChildren {
   ComoUsarRoute: typeof ComoUsarRoute
   ComoUsarImagensRoute: typeof ComoUsarImagensRoute
   ImagensRoute: typeof ImagensRoute
+  ApiOptimizeBatchRoute: typeof ApiOptimizeBatchRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +125,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/optimize-batch': {
+      id: '/api/optimize-batch'
+      path: '/api/optimize-batch'
+      fullPath: '/api/optimize-batch'
+      preLoaderRoute: typeof ApiOptimizeBatchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +140,7 @@ const rootRouteChildren: RootRouteChildren = {
   ComoUsarRoute: ComoUsarRoute,
   ComoUsarImagensRoute: ComoUsarImagensRoute,
   ImagensRoute: ImagensRoute,
+  ApiOptimizeBatchRoute: ApiOptimizeBatchRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
