@@ -18,6 +18,7 @@ export type OptimizeField = "title" | "description";
 
 export interface AIResponse {
   text: string;
+  justification?: string;
   error?: string;
   success?: boolean;
   retryAfter?: number;
@@ -149,11 +150,23 @@ async function callGemini(
       const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
       if (!rawText) return { ok: false, quotaZero: false, response: { text: "", error: "[Gemini] Resposta vazia.", success: false } };
 
-      const text = cleanResponse(rawText, field);
+      let parsedText = "";
+      let parsedJustification = "";
+      try {
+        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+        const jsonString = jsonMatch ? jsonMatch[0] : rawText;
+        const parsed = JSON.parse(jsonString);
+        parsedText = parsed.text || parsed.title || parsed.description || "";
+        parsedJustification = parsed.justification || parsed.motivo || "";
+      } catch {
+        parsedText = rawText;
+      }
+
+      const text = cleanResponse(parsedText, field);
       console.log(`[Gemini/${model}] ✓ ${text.length} chars`);
 
       geminiWorkingModel = model;
-      return { ok: true, quotaZero: false, response: { text, success: true } };
+      return { ok: true, quotaZero: false, response: { text, justification: parsedJustification, success: true } };
     } catch (err) {
       console.error(`[Gemini/${model}] Erro de rede:`, err instanceof Error ? err.message : "desconhecido");
       return { ok: false, quotaZero: false, response: { text: "", error: `[Gemini] Erro de rede: ${err instanceof Error ? err.message : "desconhecido"}`, success: false } };
@@ -250,9 +263,21 @@ async function callOpenAIProvider(
       return { text: "", error: `[${config.label}] Resposta vazia.`, success: false };
     }
 
-    const text = cleanResponse(rawText, field);
+    let parsedText = "";
+    let parsedJustification = "";
+    try {
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      const jsonString = jsonMatch ? jsonMatch[0] : rawText;
+      const parsed = JSON.parse(jsonString);
+      parsedText = parsed.text || parsed.title || parsed.description || "";
+      parsedJustification = parsed.justification || parsed.motivo || "";
+    } catch {
+      parsedText = rawText;
+    }
+
+    const text = cleanResponse(parsedText, field);
     console.log(`[${config.label}] ✓ ${text.length} chars`);
-    return { text, success: true };
+    return { text, justification: parsedJustification, success: true };
   } catch (err: unknown) {
     // Extract status and message from OpenAI SDK errors
     const status = (err as { status?: number })?.status;

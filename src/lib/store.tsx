@@ -66,7 +66,12 @@ Analise a URL fornecida e crie um Meta Title otimizado para o produto/página de
 </exemplo_errado_nunca_faca>
 
 <formato_saida>
-Responda APENAS com o texto do título. Sem aspas, sem introduções, sem explicações.
+Responda OBRIGATORIAMENTE em formato JSON válido contendo exatamente estas duas chaves:
+{
+  "text": "O texto do título aqui",
+  "justification": "Justificativa de 1 frase explicando por que este título traz CTR e faz sentido com o produto"
+}
+Sem aspas em volta do JSON, sem markdown, apenas o JSON puro.
 </formato_saida>`;
 
 export const DEFAULT_DESC_PROMPT = `Você é um Especialista em SEO Sênior e Copywriter de alta conversão.
@@ -96,7 +101,12 @@ Analise a URL fornecida e crie uma Meta Description persuasiva para o produto/p�
 </exemplo_errado_nunca_faca>
 
 <formato_saida>
-Responda APENAS com o texto da description. Sem aspas, sem introduções, sem explicações.
+Responda OBRIGATORIAMENTE em formato JSON válido contendo exatamente estas duas chaves:
+{
+  "text": "O texto da description aqui",
+  "justification": "Justificativa de 1 frase explicando por que esta descrição traz CTR e faz sentido com o produto"
+}
+Sem aspas em volta do JSON, sem markdown, apenas o JSON puro.
 </formato_saida>`;
 
 const STORAGE_KEY = "serp-studio-settings";
@@ -118,7 +128,8 @@ export function loadSettings(): AppSettings {
       const isDefaultish = (p: unknown) =>
         !p || typeof p !== "string" || p.length < 100 ||
         p.includes("You are an SEO") || p.includes("Rewrite the") ||
-        !p.includes("<regras_inviolaveis>");
+        !p.includes("<regras_inviolaveis>") ||
+        !p.includes("OBRIGATORIAMENTE em formato JSON");
 
       // Migrate deprecated providers to gemini
       const savedProvider = typeof parsed.provider === "string" ? parsed.provider : "";
