@@ -42,7 +42,6 @@ import { getActiveKey, useSettings, type AIProvider, type CsvRow } from "@/lib/s
 
 export const Route = createFileRoute("/")({ component: Index });
 
-const OPENAI_BATCH_MODEL = "gpt-4o-mini";
 const SERP_GRID_TEMPLATE =
   "minmax(120px, 0.9fr) minmax(135px, 1fr) minmax(135px, 1fr) minmax(170px, 1.25fr) minmax(170px, 1.25fr) 58px";
 
@@ -193,7 +192,7 @@ function Index() {
 
   const queue = useBatchQueue({
     apiKey: activeKey,
-    model: OPENAI_BATCH_MODEL,
+    provider: settings.provider,
     userPrompt: batchUserPrompt,
     onRowsChanged: refreshRows,
     onPaused: (message) => {
@@ -250,16 +249,9 @@ function Index() {
   }, [fileName, firstVirtualIndex, lastVirtualIndex, refreshKey, rowCount]);
 
   const preflight = useCallback((): boolean => {
-    if (settings.provider !== "openai") {
-      toast.error("Batch usa ChatGPT/OpenAI", {
-        description: "Selecione ChatGPT no painel lateral para processar a fila.",
-      });
-      return false;
-    }
-
     if (!activeKey.trim()) {
       toast.error("API Key ausente", {
-        description: "Defina a chave ChatGPT/OpenAI antes de otimizar.",
+        description: `Defina a chave ${PROVIDER_LABELS[settings.provider]} antes de otimizar.`,
       });
       return false;
     }
@@ -353,7 +345,7 @@ function Index() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             apiKey: activeKey,
-            model: OPENAI_BATCH_MODEL,
+            provider: settings.provider,
             userPrompt: batchUserPrompt,
             batch: [{ id: row.id, url: row.url, title: row.title, description: row.description }],
           }),
@@ -384,7 +376,7 @@ function Index() {
         setOptimizingRowId(null);
       }
     },
-    [activeKey, batchUserPrompt, preflight, refreshRows],
+    [activeKey, batchUserPrompt, preflight, refreshRows, settings.provider],
   );
 
   const downloadCsv = useCallback(async () => {
@@ -539,9 +531,6 @@ function Index() {
                       className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
                     />
                   </div>
-                  <p className="mt-1 text-[10px] text-white/40">
-                    Modelo batch: {OPENAI_BATCH_MODEL}
-                  </p>
                 </div>
               )}
 
