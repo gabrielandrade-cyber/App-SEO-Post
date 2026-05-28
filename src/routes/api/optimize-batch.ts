@@ -192,7 +192,7 @@ export const Route = createFileRoute("/api/optimize-batch")({
           let content = "{}";
 
           if (provider === "gemini") {
-            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
             const geminiPayload = {
               systemInstruction: {
