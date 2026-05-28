@@ -38,12 +38,7 @@ import {
   updateCsvRows,
 } from "@/lib/db";
 import { importCSVToIndexedDB } from "@/lib/csv-parser";
-import {
-  getActiveKey,
-  useSettings,
-  type AIProvider,
-  type CsvRow,
-} from "@/lib/store";
+import { getActiveKey, useSettings, type AIProvider, type CsvRow } from "@/lib/store";
 
 export const Route = createFileRoute("/")({ component: Index });
 
@@ -63,15 +58,33 @@ const AI_PROVIDER_OPTIONS: Array<{
   Icon?: typeof Sparkles;
   color: string;
 }> = [
-  { id: "gemini", label: "Gemini", img: "/google-gemini-icon.webp", color: "from-slate-800 to-slate-900" },
+  {
+    id: "gemini",
+    label: "Gemini",
+    img: "/google-gemini-icon.webp",
+    color: "from-slate-800 to-slate-900",
+  },
   { id: "groq", label: "Groq", img: "/groq.png", color: "from-slate-800 to-slate-900" },
-  { id: "cerebras", label: "Cerebras", img: "/cerebras-color.png", color: "from-slate-800 to-slate-900" },
+  {
+    id: "cerebras",
+    label: "Cerebras",
+    img: "/cerebras-color.png",
+    color: "from-slate-800 to-slate-900",
+  },
   { id: "openai", label: "ChatGPT", Icon: Sparkles, color: "from-emerald-700 to-slate-900" },
 ];
 
-function GlassCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function GlassCard({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className={`rounded-3xl border border-white/5 bg-white/[0.02] p-6 shadow-2xl backdrop-blur-2xl ${className}`}>
+    <div
+      className={`rounded-3xl border border-white/5 bg-white/[0.02] p-6 shadow-2xl backdrop-blur-2xl ${className}`}
+    >
       {children}
     </div>
   );
@@ -81,7 +94,11 @@ function CharCount({ value, max }: { value: string; max: number }) {
   const len = value.length;
   const ratio = len / max;
   const color = ratio > 1 ? "text-rose-400" : ratio > 0.9 ? "text-amber-400" : "text-emerald-400";
-  return <span className={`ml-2 text-[10px] font-mono ${color}`}>{len}/{max}</span>;
+  return (
+    <span className={`ml-2 text-[10px] font-mono ${color}`}>
+      {len}/{max}
+    </span>
+  );
 }
 
 export function sanitizeCsvFileName(name: string): string {
@@ -103,34 +120,40 @@ function escapeCsvValue(value?: string): string {
 
 export function buildControlCsv(rows: CsvRow[]): string {
   return rows
-    .map((row) => [
-      row.url,
-      row.newTitle ?? "",
-      row.newDescription ?? "",
-      row.titleJustification ?? "",
-      row.descriptionJustification ?? "",
-      row.title,
-      row.description,
-    ].map(escapeCsvValue).join(","))
+    .map((row) =>
+      [
+        row.url,
+        row.newTitle ?? "",
+        row.newDescription ?? "",
+        row.titleJustification ?? "",
+        row.descriptionJustification ?? "",
+        row.title,
+        row.description,
+      ]
+        .map(escapeCsvValue)
+        .join(","),
+    )
     .join("\n");
 }
 
 function QueueBadge({ status }: { status: string }) {
-  const label = {
-    idle: "Pronta",
-    running: "A processar",
-    paused: "Pausada",
-    done: "Concluida",
-    error: "Erro",
-  }[status] ?? status;
+  const label =
+    {
+      idle: "Pronta",
+      running: "A processar",
+      paused: "Pausada",
+      done: "Concluida",
+      error: "Erro",
+    }[status] ?? status;
 
-  const color = {
-    idle: "border-white/10 bg-white/5 text-white/60",
-    running: "border-indigo-300/30 bg-indigo-400/10 text-indigo-100",
-    paused: "border-amber-300/30 bg-amber-400/10 text-amber-100",
-    done: "border-emerald-300/30 bg-emerald-400/10 text-emerald-100",
-    error: "border-rose-300/30 bg-rose-400/10 text-rose-100",
-  }[status] ?? "border-white/10 bg-white/5 text-white/60";
+  const color =
+    {
+      idle: "border-white/10 bg-white/5 text-white/60",
+      running: "border-indigo-300/30 bg-indigo-400/10 text-indigo-100",
+      paused: "border-amber-300/30 bg-amber-400/10 text-amber-100",
+      done: "border-emerald-300/30 bg-emerald-400/10 text-emerald-100",
+      error: "border-rose-300/30 bg-rose-400/10 text-rose-100",
+    }[status] ?? "border-white/10 bg-white/5 text-white/60";
 
   return (
     <span className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-wider ${color}`}>
@@ -155,10 +178,21 @@ function Index() {
 
   const activeKey = getActiveKey(settings);
   const refreshRows = useCallback(() => setRefreshKey((value) => value + 1), []);
+  const batchUserPrompt = useMemo(
+    () =>
+      [
+        "REGRAS PARA META TITLE:",
+        settings.titlePrompt,
+        "REGRAS PARA META DESCRIPTION:",
+        settings.descPrompt,
+      ].join("\n\n"),
+    [settings.descPrompt, settings.titlePrompt],
+  );
 
   const queue = useBatchQueue({
     apiKey: activeKey,
     model: OPENAI_BATCH_MODEL,
+    userPrompt: batchUserPrompt,
     onRowsChanged: refreshRows,
     onPaused: (message) => {
       setQuotaMessage(message);
@@ -231,43 +265,52 @@ function Index() {
     return true;
   }, [activeKey, settings.provider]);
 
-  const handleFile = useCallback(async (file: File) => {
-    setIsImporting(true);
-    setImportedRows(0);
-    setRowCache(new Map());
+  const handleFile = useCallback(
+    async (file: File) => {
+      setIsImporting(true);
+      setImportedRows(0);
+      setRowCache(new Map());
 
-    const result = await importCSVToIndexedDB(file, ({ imported }) => {
-      setImportedRows(imported);
-    });
+      const result = await importCSVToIndexedDB(file, ({ imported }) => {
+        setImportedRows(imported);
+      });
 
-    if (result.errors.length > 0) {
-      result.errors.forEach((error) => toast.error("Erro no CSV", { description: error }));
-      setFileName(null);
-      setRowCount(0);
-    } else {
-      const meta = await getCsvMeta();
-      setFileName(meta.fileName);
-      setRowCount(meta.rowCount);
-      setImportedRows(meta.rowCount);
-      refreshRows();
-      await queue.refreshState();
-      toast.success(`${meta.rowCount} URLs carregadas com sucesso.`);
-    }
+      if (result.errors.length > 0) {
+        result.errors.forEach((error) => toast.error("Erro no CSV", { description: error }));
+        setFileName(null);
+        setRowCount(0);
+      } else {
+        const meta = await getCsvMeta();
+        setFileName(meta.fileName);
+        setRowCount(meta.rowCount);
+        setImportedRows(meta.rowCount);
+        refreshRows();
+        await queue.refreshState();
+        toast.success(`${meta.rowCount} URLs carregadas com sucesso.`);
+      }
 
-    setIsImporting(false);
-  }, [queue.refreshState, refreshRows]);
+      setIsImporting(false);
+    },
+    [queue.refreshState, refreshRows],
+  );
 
-  const onFileChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) void handleFile(file);
-    event.target.value = "";
-  }, [handleFile]);
+  const onFileChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) void handleFile(file);
+      event.target.value = "";
+    },
+    [handleFile],
+  );
 
-  const onDrop = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    const file = event.dataTransfer.files[0];
-    if (file) void handleFile(file);
-  }, [handleFile]);
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      const file = event.dataTransfer.files[0];
+      if (file) void handleFile(file);
+    },
+    [handleFile],
+  );
 
   const clearFile = useCallback(async () => {
     await clearCsvData();
@@ -293,50 +336,54 @@ function Index() {
     void queue.pause();
   }, [queue.pause]);
 
-  const optimizeRow = useCallback(async (rowId: number) => {
-    if (!preflight()) return;
+  const optimizeRow = useCallback(
+    async (rowId: number) => {
+      if (!preflight()) return;
 
-    const row = await getCsvRow(rowId);
-    if (!row) return;
+      const row = await getCsvRow(rowId);
+      if (!row) return;
 
-    setOptimizingRowId(rowId);
+      setOptimizingRowId(rowId);
 
-    try {
-      const response = await fetch("/api/optimize-batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          apiKey: activeKey,
-          model: OPENAI_BATCH_MODEL,
-          batch: [{ id: row.id, url: row.url, title: row.title, description: row.description }],
-        }),
-      });
+      try {
+        const response = await fetch("/api/optimize-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            apiKey: activeKey,
+            model: OPENAI_BATCH_MODEL,
+            userPrompt: batchUserPrompt,
+            batch: [{ id: row.id, url: row.url, title: row.title, description: row.description }],
+          }),
+        });
 
-      const data = await response.json().catch(() => ({}));
+        const data = await response.json().catch(() => ({}));
 
-      if (response.status === 429 || response.status === 402) {
-        const message =
-          "A API atingiu o limite ou ficou sem saldo. A fila foi pausada. Insira uma nova Chave API ou aguarde e clique em 'Retomar'.";
-        setQuotaMessage(message);
-        setQuotaModalOpen(true);
-        return;
+        if (response.status === 429 || response.status === 402) {
+          const message =
+            "A API atingiu o limite ou ficou sem saldo. A fila foi pausada. Insira uma nova Chave API ou aguarde e clique em 'Retomar'.";
+          setQuotaMessage(message);
+          setQuotaModalOpen(true);
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(data.error || `Erro HTTP ${response.status}`);
+        }
+
+        await updateCsvRows(data.resultados ?? []);
+        refreshRows();
+        toast.success("Linha otimizada.");
+      } catch (err) {
+        toast.error("Erro da IA", {
+          description: err instanceof Error ? err.message : "Erro inesperado.",
+        });
+      } finally {
+        setOptimizingRowId(null);
       }
-
-      if (!response.ok) {
-        throw new Error(data.error || `Erro HTTP ${response.status}`);
-      }
-
-      await updateCsvRows(data.resultados ?? []);
-      refreshRows();
-      toast.success("Linha otimizada.");
-    } catch (err) {
-      toast.error("Erro da IA", {
-        description: err instanceof Error ? err.message : "Erro inesperado.",
-      });
-    } finally {
-      setOptimizingRowId(null);
-    }
-  }, [activeKey, preflight, refreshRows]);
+    },
+    [activeKey, batchUserPrompt, preflight, refreshRows],
+  );
 
   const downloadCsv = useCallback(async () => {
     const rows = await getAllCsvRows();
@@ -371,9 +418,7 @@ function Index() {
               <AlertTriangle className="h-5 w-5 text-amber-300" />
               Fila pausada
             </DialogTitle>
-            <DialogDescription className="text-white/65">
-              {quotaMessage}
-            </DialogDescription>
+            <DialogDescription className="text-white/65">{quotaMessage}</DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-2">
             <button
@@ -415,9 +460,15 @@ function Index() {
                         : "border-white/10 bg-white/[0.03] hover:bg-white/[0.07]"
                     }`}
                   >
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${opt.color} border border-white/10 shadow-inner`}>
+                    <div
+                      className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${opt.color} border border-white/10 shadow-inner`}
+                    >
                       {opt.img ? (
-                        <img src={opt.img} alt={opt.label} className="h-5 w-5 object-contain drop-shadow-sm" />
+                        <img
+                          src={opt.img}
+                          alt={opt.label}
+                          className="h-5 w-5 object-contain drop-shadow-sm"
+                        />
                       ) : Icon ? (
                         <Icon className="h-5 w-5 text-emerald-100 drop-shadow-sm" />
                       ) : null}
@@ -431,13 +482,17 @@ function Index() {
             <div className="mt-5 space-y-3">
               {settings.provider === "gemini" && (
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-white/70">Chave Gemini</label>
+                  <label className="mb-1.5 block text-xs font-medium text-white/70">
+                    Chave Gemini
+                  </label>
                   <div className="relative">
                     <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
                     <input
                       type="password"
                       value={settings.geminiKey}
-                      onChange={(event) => dispatch({ type: "SET_GEMINI_KEY", payload: event.target.value })}
+                      onChange={(event) =>
+                        dispatch({ type: "SET_GEMINI_KEY", payload: event.target.value })
+                      }
                       placeholder="AIzaSy..."
                       className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
                     />
@@ -447,13 +502,17 @@ function Index() {
 
               {settings.provider === "groq" && (
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-white/70">Chave Groq</label>
+                  <label className="mb-1.5 block text-xs font-medium text-white/70">
+                    Chave Groq
+                  </label>
                   <div className="relative">
                     <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
                     <input
                       type="password"
                       value={settings.groqKey}
-                      onChange={(event) => dispatch({ type: "SET_GROQ_KEY", payload: event.target.value })}
+                      onChange={(event) =>
+                        dispatch({ type: "SET_GROQ_KEY", payload: event.target.value })
+                      }
                       placeholder="gsk_..."
                       className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
                     />
@@ -463,30 +522,40 @@ function Index() {
 
               {settings.provider === "openai" && (
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-white/70">Chave ChatGPT/OpenAI</label>
+                  <label className="mb-1.5 block text-xs font-medium text-white/70">
+                    Chave ChatGPT/OpenAI
+                  </label>
                   <div className="relative">
                     <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
                     <input
                       type="password"
                       value={settings.openaiKey}
-                      onChange={(event) => dispatch({ type: "SET_OPENAI_KEY", payload: event.target.value })}
+                      onChange={(event) =>
+                        dispatch({ type: "SET_OPENAI_KEY", payload: event.target.value })
+                      }
                       placeholder="sk-..."
                       className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
                     />
                   </div>
-                  <p className="mt-1 text-[10px] text-white/40">Modelo batch: {OPENAI_BATCH_MODEL}</p>
+                  <p className="mt-1 text-[10px] text-white/40">
+                    Modelo batch: {OPENAI_BATCH_MODEL}
+                  </p>
                 </div>
               )}
 
               {settings.provider === "cerebras" && (
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-white/70">Chave Cerebras</label>
+                  <label className="mb-1.5 block text-xs font-medium text-white/70">
+                    Chave Cerebras
+                  </label>
                   <div className="relative">
                     <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
                     <input
                       type="password"
                       value={settings.cerebrasKey}
-                      onChange={(event) => dispatch({ type: "SET_CEREBRAS_KEY", payload: event.target.value })}
+                      onChange={(event) =>
+                        dispatch({ type: "SET_CEREBRAS_KEY", payload: event.target.value })
+                      }
                       placeholder="csk-..."
                       className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
                     />
@@ -523,19 +592,27 @@ function Index() {
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-white/70">Prompt Title</label>
+                  <label className="mb-1.5 block text-xs font-medium text-white/70">
+                    Prompt Title
+                  </label>
                   <textarea
                     value={settings.titlePrompt}
-                    onChange={(event) => dispatch({ type: "SET_TITLE_PROMPT", payload: event.target.value })}
+                    onChange={(event) =>
+                      dispatch({ type: "SET_TITLE_PROMPT", payload: event.target.value })
+                    }
                     rows={4}
                     className="w-full resize-none rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/90 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-xs font-medium text-white/70">Prompt Description</label>
+                  <label className="mb-1.5 block text-xs font-medium text-white/70">
+                    Prompt Description
+                  </label>
                   <textarea
                     value={settings.descPrompt}
-                    onChange={(event) => dispatch({ type: "SET_DESC_PROMPT", payload: event.target.value })}
+                    onChange={(event) =>
+                      dispatch({ type: "SET_DESC_PROMPT", payload: event.target.value })
+                    }
                     rows={4}
                     className="w-full resize-none rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/90 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
                   />
@@ -561,7 +638,13 @@ function Index() {
 
         <section className="space-y-6">
           <GlassCard className="p-6">
-            <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={onFileChange} />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              onChange={onFileChange}
+            />
             {!fileName ? (
               <div
                 onDragOver={(event) => event.preventDefault()}
@@ -569,10 +652,16 @@ function Index() {
                 className="group relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-white/15 bg-white/[0.02] px-6 py-12 text-center transition-all duration-300 hover:border-white/30 hover:bg-white/[0.05]"
               >
                 <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-400/30 to-fuchsia-500/30 backdrop-blur-xl">
-                  {isImporting ? <Loader2 className="h-6 w-6 animate-spin text-white" /> : <Upload className="h-6 w-6 text-white" />}
+                  {isImporting ? (
+                    <Loader2 className="h-6 w-6 animate-spin text-white" />
+                  ) : (
+                    <Upload className="h-6 w-6 text-white" />
+                  )}
                 </div>
                 <p className="text-sm font-medium text-white/90">
-                  {isImporting ? `A importar ${importedRows} linhas...` : "Arraste o seu ficheiro CSV ou clique para procurar"}
+                  {isImporting
+                    ? `A importar ${importedRows} linhas...`
+                    : "Arraste o seu ficheiro CSV ou clique para procurar"}
                 </p>
                 <p className="mt-1 text-xs text-white/50">Suporta CSVs massivos via IndexedDB</p>
                 <button
@@ -615,11 +704,17 @@ function Index() {
                   <>
                     {queue.status !== "running" && (
                       <button
-                        onClick={queue.status === "paused" || queue.status === "error" ? resumeQueue : startQueue}
+                        onClick={
+                          queue.status === "paused" || queue.status === "error"
+                            ? resumeQueue
+                            : startQueue
+                        }
                         className="liquid-glass-button inline-flex items-center gap-1.5 rounded-full border border-emerald-300/30 px-3.5 py-1.5 text-[11px] font-medium text-white"
                       >
                         <Play className="h-3 w-3 text-emerald-300" />
-                        {queue.status === "paused" || queue.status === "error" ? "Retomar fila" : "Iniciar fila"}
+                        {queue.status === "paused" || queue.status === "error"
+                          ? "Retomar fila"
+                          : "Iniciar fila"}
                       </button>
                     )}
                     {queue.status === "running" && (
@@ -652,7 +747,9 @@ function Index() {
                       style={{ width: `${queue.progress}%` }}
                     />
                   </div>
-                  {queue.lastError && <p className="mt-2 text-xs text-rose-200">{queue.lastError}</p>}
+                  {queue.lastError && (
+                    <p className="mt-2 text-xs text-rose-200">{queue.lastError}</p>
+                  )}
                 </div>
 
                 <div className="overflow-x-auto">
@@ -666,7 +763,10 @@ function Index() {
                       <div className="px-6 py-3 text-right font-medium">Actions</div>
                     </div>
 
-                    <div ref={tableScrollRef} className="h-[620px] overflow-auto">
+                    <div
+                      ref={tableScrollRef}
+                      className="h-[calc(100vh-280px)] min-h-[400px] overflow-auto"
+                    >
                       <div
                         className="relative"
                         style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
@@ -692,21 +792,29 @@ function Index() {
                                     </span>
                                   </div>
                                   <div className="max-w-[220px] px-6 py-4">
-                                    <p className="line-clamp-2 text-xs text-white/70">{row.title}</p>
+                                    <p className="line-clamp-2 text-xs text-white/70">
+                                      {row.title}
+                                    </p>
                                     <CharCount value={row.title} max={60} />
                                   </div>
                                   <div className="max-w-[240px] px-6 py-4">
-                                    <p className={`line-clamp-2 text-xs ${row.newTitle ? "text-white/90" : "text-white/30"}`}>
+                                    <p
+                                      className={`line-clamp-2 text-xs ${row.newTitle ? "text-white/90" : "text-white/30"}`}
+                                    >
                                       {row.newTitle || "Ainda nao gerado"}
                                     </p>
                                     <CharCount value={row.newTitle ?? ""} max={60} />
                                   </div>
                                   <div className="max-w-[280px] px-6 py-4">
-                                    <p className="line-clamp-2 text-xs text-white/70">{row.description}</p>
+                                    <p className="line-clamp-2 text-xs text-white/70">
+                                      {row.description}
+                                    </p>
                                     <CharCount value={row.description} max={155} />
                                   </div>
                                   <div className="max-w-[300px] px-6 py-4">
-                                    <p className={`line-clamp-2 text-xs ${row.newDescription ? "text-white/90" : "text-white/30"}`}>
+                                    <p
+                                      className={`line-clamp-2 text-xs ${row.newDescription ? "text-white/90" : "text-white/30"}`}
+                                    >
                                       {row.newDescription || "Ainda nao gerada"}
                                     </p>
                                     <CharCount value={row.newDescription ?? ""} max={155} />
@@ -714,7 +822,9 @@ function Index() {
                                   <div className="px-6 py-4">
                                     <div className="flex justify-end gap-1.5">
                                       <button
-                                        disabled={optimizingRowId === row.id || queue.status === "running"}
+                                        disabled={
+                                          optimizingRowId === row.id || queue.status === "running"
+                                        }
                                         onClick={() => void optimizeRow(row.id)}
                                         title="Otimizar linha"
                                         className={`liquid-glass-button inline-flex h-7 w-7 items-center justify-center rounded-full border text-white disabled:opacity-60 ${
@@ -735,7 +845,9 @@ function Index() {
                                   </div>
                                 </>
                               ) : (
-                                <div className="col-span-6 px-6 py-4 text-xs text-white/35">A carregar linha...</div>
+                                <div className="col-span-6 px-6 py-4 text-xs text-white/35">
+                                  A carregar linha...
+                                </div>
                               )}
                             </div>
                           );
