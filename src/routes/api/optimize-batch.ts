@@ -11,6 +11,7 @@ interface BatchRow {
 interface OptimizeBatchPayload {
   apiKey?: string;
   model?: string;
+  userPrompt?: string; // Recebe as suas regras do Frontend
   batch?: BatchRow[];
 }
 
@@ -21,9 +22,6 @@ interface BatchResult {
   titleJustification: string;
   descriptionJustification: string;
 }
-
-const SYSTEM_PROMPT =
-  'analisa o array json fornecido com ids. devolve um json com a chave "resultados" contendo um array onde cada objeto tem o id original, newTitle e newDescription otimizados. newTitle max 60 caracteres. newDescription max 150 caracteres. nao justifiques.';
 
 function asString(value: unknown, max = 500): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -50,10 +48,10 @@ function normalizeResults(raw: unknown, ids: Set<number>): BatchResult[] {
 
       return {
         id,
-        newTitle: asString(row.newTitle, 60),
-        newDescription: asString(row.newDescription, 150),
-        titleJustification: "",
-        descriptionJustification: "",
+        newTitle: asString(row.newTitle, 65), // Expandido para não cortar títulos de 60
+        newDescription: asString(row.newDescription, 160), // Expandido para não cortar descrições
+        titleJustification: asString(row.titleJustification, 300),
+        descriptionJustification: asString(row.descriptionJustification, 300),
       } satisfies BatchResult;
     })
     .filter((row): row is BatchResult => Boolean(row));
@@ -66,15 +64,11 @@ export const Route = createFileRoute("/api/optimize-batch")({
         const body = (await request.json().catch(() => null)) as OptimizeBatchPayload | null;
         const apiKey = body?.apiKey?.trim();
         const model = body?.model?.trim() || "gpt-4o-mini";
+        const userPrompt = body?.userPrompt?.trim() || "";
         const batch = Array.isArray(body?.batch) ? body.batch.slice(0, 20) : [];
 
-        if (!apiKey) {
-          return Response.json({ error: "apiKey em falta" }, { status: 400 });
-        }
-
-        if (batch.length === 0) {
-          return Response.json({ error: "batch vazio" }, { status: 400 });
-        }
+        if (!apiKey) return Response.json({ error: "apiKey em falta" }, { status: 400 });
+        if (batch.length === 0) return Response.json({ error: "batch vazio" }, { status: 400 });
 
         const safeBatch = batch.map((row) => ({
           id: Number(row.id),
@@ -85,12 +79,26 @@ export const Route = createFileRoute("/api/optimize-batch")({
 
         const ids = new Set(safeBatch.map((row) => row.id));
 
+        // Aqui é onde fundimos o SEU prompt com a regra de batch
+        const SYSTEM_PROMPT = `${userPrompt}
+        
+ATENÇÃO IA: Ignore qualquer instrução para devolver a resposta como um objeto JSON individual.
+APLIQUE RIGOROSAMENTE todas as regras de SEO descritas acima na lista de URLs fornecida.
+Devolva OBRIGATORIAMENTE um JSON contendo a chave "resultados", que deve ser um Array.
+Cada objeto do array DEVE conter exatamente estas chaves:
+- "id" (o id numérico original)
+- "newTitle" (o título gerado)
+- "newDescription" (a description gerada)
+- "titleJustification" (justificativa do título)
+- "descriptionJustification" (justificativa da description)
+Não escreva mais nada além do JSON final.`;
+
         try {
           const client = new OpenAI({ apiKey });
           const completion = await client.chat.completions.create({
             model,
-            temperature: 0.1,
-            max_tokens: 150 * safeBatch.length,
+            temperature: 0.2, // Um pouco mais de criatividade
+            max_tokens: 350 * safeBatch.length, // Aumentado para permitir descrições ricas
             response_format: { type: "json_object" },
             messages: [
               { role: "system", content: SYSTEM_PROMPT },
@@ -107,7 +115,6 @@ export const Route = createFileRoute("/api/optimize-batch")({
           const status = Number((err as { status?: number })?.status) || 500;
           const message = err instanceof Error ? err.message : "erro openai";
           const responseStatus = status === 429 || status === 402 || status === 401 ? status : 500;
-
           return Response.json({ error: message }, { status: responseStatus });
         }
       },

@@ -41,6 +41,7 @@ function toPayloadRow(row: CsvRow) {
 export function useBatchQueue({
   apiKey,
   model,
+  userPrompt,
   batchSize = DEFAULT_BATCH_SIZE,
   onRowsChanged,
   onPaused,
@@ -104,6 +105,7 @@ export function useBatchQueue({
           body: JSON.stringify({
             apiKey,
             model,
+            userPrompt,
             batch: batch.map(toPayloadRow),
           }),
         });

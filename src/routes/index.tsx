@@ -159,6 +159,7 @@ function Index() {
   const queue = useBatchQueue({
     apiKey: activeKey,
     model: OPENAI_BATCH_MODEL,
+    userPrompt: combinedPrompt,
     onRowsChanged: refreshRows,
     onPaused: (message) => {
       setQuotaMessage(message);
@@ -308,6 +309,7 @@ function Index() {
         body: JSON.stringify({
           apiKey: activeKey,
           model: OPENAI_BATCH_MODEL,
+          userPrompt: combinedPrompt,
           batch: [{ id: row.id, url: row.url, title: row.title, description: row.description }],
         }),
       });
@@ -666,7 +668,7 @@ function Index() {
                       <div className="px-6 py-3 text-right font-medium">Actions</div>
                     </div>
 
-                    <div ref={tableScrollRef} className="h-[620px] overflow-auto">
+                    <div ref={tableScrollRef} className="h-[calc(100vh-280px)] min-h-[400px] overflow-auto">
                       <div
                         className="relative"
                         style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
