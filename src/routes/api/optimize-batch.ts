@@ -188,50 +188,81 @@ export const Route = createFileRoute("/api/optimize-batch")({
           };
         });
 
-        let baseURL: string | undefined = undefined;
-        let model = "gpt-4o-mini";
-        let isGemini = false;
-
-        if (provider === "groq") {
-          baseURL = "https://api.groq.com/openai/v1";
-          model = "llama-3.3-70b-versatile";
-        } else if (provider === "cerebras") {
-          baseURL = "https://api.cerebras.ai/v1";
-          model = "gpt-oss-120b"; // Atualizado para o modelo ativo na Cerebras
-        } else if (provider === "gemini") {
-          baseURL = "https://generativelanguage.googleapis.com/v1beta/openai/"; // A barra final é obrigatória
-          model = "gemini-1.5-flash";
-          isGemini = true;
-        }
-
         try {
-          const client = new OpenAI({ apiKey, baseURL });
+          let content = "{}";
 
-          const reqOptions: any = {
-            model,
-            temperature: 0.3,
-            messages: [
-              {
-                role: "system",
-                content: `${SYSTEM_PROMPT}\n\nREGRAS DO USUÁRIO:\n${userPrompt || "Otimize titles e descriptions para SEO."}`,
-              },
-              { role: "user", content: JSON.stringify({ batch: enrichedBatch }) },
-            ],
-          };
+          if (provider === "gemini") {
+            // Integração NATIVA do Gemini via REST Fetch (Ignorando o SDK OpenAI)
+            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+            const geminiRes = await fetch(geminiUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                systemInstruction: {
+                  parts: [
+                    {
+                      text: `${SYSTEM_PROMPT}\n\nREGRAS DO USUÁRIO:\n${userPrompt || "Otimize titles e descriptions para SEO."}`,
+                    },
+                  ],
+                },
+                contents: [
+                  {
+                    role: "user",
+                    parts: [{ text: JSON.stringify({ batch: enrichedBatch }) }],
+                  },
+                ],
+                generationConfig: {
+                  temperature: 0.3,
+                  responseMimeType: "application/json",
+                },
+              }),
+            });
 
-          if (!isGemini) {
-            reqOptions.response_format = { type: "json_object" };
+            if (!geminiRes.ok) {
+              const errStatus = geminiRes.status;
+              throw Object.assign(new Error(`Erro Gemini HTTP ${errStatus}`), {
+                status: errStatus,
+              });
+            }
+
+            const geminiData = await geminiRes.json();
+            content = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+          } else {
+            // Integração Padrão OpenAI (Groq, Cerebras, ChatGPT)
+            let baseURL: string | undefined = undefined;
+            let model = "gpt-4o-mini";
+
+            if (provider === "groq") {
+              baseURL = "https://api.groq.com/openai/v1";
+              model = "llama-3.3-70b-versatile";
+            } else if (provider === "cerebras") {
+              baseURL = "https://api.cerebras.ai/v1";
+              model = "gpt-oss-120b";
+            }
+
+            const client = new OpenAI({ apiKey, baseURL });
+            const completion = await client.chat.completions.create({
+              model,
+              temperature: 0.3,
+              response_format: { type: "json_object" },
+              messages: [
+                {
+                  role: "system",
+                  content: `${SYSTEM_PROMPT}\n\nREGRAS DO USUÁRIO:\n${userPrompt || "Otimize titles e descriptions para SEO."}`,
+                },
+                { role: "user", content: JSON.stringify({ batch: enrichedBatch }) },
+              ],
+            });
+
+            content = completion.choices[0]?.message?.content ?? "{}";
           }
-
-          const completion = await client.chat.completions.create(reqOptions);
-          const content = completion.choices[0]?.message?.content ?? "{}";
           const parsed = parseJsonObject(content);
           const resultados = normalizeResults(parsed, ids);
 
           return Response.json({ resultados });
         } catch (err) {
           const status = Number((err as { status?: number })?.status) || 500;
-          const message = err instanceof Error ? err.message : "erro openai";
+          const message = err instanceof Error ? err.message : "erro ia";
           const responseStatus = status === 429 || status === 402 || status === 401 ? status : 500;
 
           return Response.json({ error: message }, { status: responseStatus });
