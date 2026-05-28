@@ -19,7 +19,7 @@ interface BatchResponse {
 
 interface UseBatchQueueOptions {
   apiKey: string;
-  model: string;
+  provider: string;
   userPrompt?: string;
   batchSize?: number;
   onRowsChanged?: () => void;
@@ -41,7 +41,7 @@ function toPayloadRow(row: CsvRow) {
 
 export function useBatchQueue({
   apiKey,
-  model,
+  provider,
   userPrompt,
   batchSize = DEFAULT_BATCH_SIZE,
   onRowsChanged,
@@ -105,7 +105,7 @@ export function useBatchQueue({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             apiKey,
-            model,
+            provider,
             userPrompt,
             batch: batch.map(toPayloadRow),
           }),
@@ -153,7 +153,7 @@ export function useBatchQueue({
     } finally {
       runningRef.current = false;
     }
-  }, [apiKey, batchSize, model, onPaused, onRowsChanged, userPrompt]);
+  }, [apiKey, batchSize, onPaused, onRowsChanged, provider, userPrompt]);
 
   const resume = useCallback(() => run(), [run]);
 

@@ -10,7 +10,7 @@ interface BatchRow {
 
 interface OptimizeBatchPayload {
   apiKey?: string;
-  model?: string;
+  provider?: string;
   userPrompt?: string;
   batch?: BatchRow[];
 }
@@ -144,7 +144,7 @@ export const Route = createFileRoute("/api/optimize-batch")({
       POST: async ({ request }) => {
         const body = (await request.json().catch(() => null)) as OptimizeBatchPayload | null;
         const apiKey = body?.apiKey?.trim();
-        const model = body?.model?.trim() || "gpt-4o-mini";
+        const provider = body?.provider?.trim() || "openai";
         const userPrompt = asString(body?.userPrompt, 12000);
         const batch = Array.isArray(body?.batch) ? body.batch : [];
 
@@ -192,8 +192,22 @@ export const Route = createFileRoute("/api/optimize-batch")({
               },
         );
 
+        let baseURL: string | undefined = undefined;
+        let model = "gpt-4o-mini";
+
+        if (provider === "groq") {
+          baseURL = "https://api.groq.com/openai/v1";
+          model = "llama-3.3-70b-versatile";
+        } else if (provider === "cerebras") {
+          baseURL = "https://api.cerebras.ai/v1";
+          model = "llama3.1-70b";
+        } else if (provider === "gemini") {
+          baseURL = "https://generativelanguage.googleapis.com/v1beta/openai/";
+          model = "gemini-1.5-flash";
+        }
+
         try {
-          const client = new OpenAI({ apiKey });
+          const client = new OpenAI({ apiKey, baseURL });
           const completion = await client.chat.completions.create({
             model,
             temperature: 0.3,
