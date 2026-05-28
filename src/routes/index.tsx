@@ -43,6 +43,8 @@ import { getActiveKey, useSettings, type AIProvider, type CsvRow } from "@/lib/s
 export const Route = createFileRoute("/")({ component: Index });
 
 const OPENAI_BATCH_MODEL = "gpt-4o-mini";
+const SERP_GRID_TEMPLATE =
+  "minmax(120px, 0.9fr) minmax(135px, 1fr) minmax(135px, 1fr) minmax(170px, 1.25fr) minmax(170px, 1.25fr) 58px";
 
 const PROVIDER_LABELS: Record<AIProvider, string> = {
   gemini: "Gemini",
@@ -753,14 +755,17 @@ function Index() {
                 </div>
 
                 <div className="overflow-x-auto">
-                  <div className="min-w-[1370px]">
-                    <div className="grid grid-cols-[220px_220px_240px_280px_300px_110px] bg-white/[0.04] text-[11px] uppercase tracking-wider text-white/50">
-                      <div className="px-6 py-3 font-medium">URL</div>
-                      <div className="px-6 py-3 font-medium">Titulo atual</div>
-                      <div className="px-6 py-3 font-medium">Novo titulo</div>
-                      <div className="px-6 py-3 font-medium">Descricao atual</div>
-                      <div className="px-6 py-3 font-medium">Nova descricao</div>
-                      <div className="px-6 py-3 text-right font-medium">Actions</div>
+                  <div className="min-w-[780px] xl:min-w-0">
+                    <div
+                      className="grid bg-white/[0.04] text-[11px] uppercase tracking-wider text-white/50"
+                      style={{ gridTemplateColumns: SERP_GRID_TEMPLATE }}
+                    >
+                      <div className="px-4 py-3 font-medium">URL</div>
+                      <div className="px-4 py-3 font-medium">Titulo atual</div>
+                      <div className="px-4 py-3 font-medium">Novo titulo</div>
+                      <div className="px-4 py-3 font-medium">Descricao atual</div>
+                      <div className="px-4 py-3 font-medium">Nova descricao</div>
+                      <div className="px-4 py-3 text-right font-medium">Ações</div>
                     </div>
 
                     <div
@@ -779,25 +784,28 @@ function Index() {
                               key={virtualRow.key}
                               data-index={virtualRow.index}
                               ref={rowVirtualizer.measureElement}
-                              className={`absolute left-0 top-0 grid w-full grid-cols-[220px_220px_240px_280px_300px_110px] border-t border-white/5 transition-colors duration-200 hover:bg-white/[0.03] ${
+                              className={`absolute left-0 top-0 grid w-full border-t border-white/5 transition-colors duration-200 hover:bg-white/[0.03] ${
                                 virtualRow.index % 2 === 1 ? "bg-white/[0.015]" : ""
                               }`}
-                              style={{ transform: `translateY(${virtualRow.start}px)` }}
+                              style={{
+                                gridTemplateColumns: SERP_GRID_TEMPLATE,
+                                transform: `translateY(${virtualRow.start}px)`,
+                              }}
                             >
                               {row ? (
                                 <>
-                                  <div className="max-w-[220px] px-6 py-4">
+                                  <div className="min-w-0 px-4 py-4">
                                     <span className="block truncate font-mono text-xs text-white/70">
                                       {row.url.replace(/^https?:\/\//, "")}
                                     </span>
                                   </div>
-                                  <div className="max-w-[220px] px-6 py-4">
+                                  <div className="min-w-0 px-4 py-4">
                                     <p className="line-clamp-2 text-xs text-white/70">
                                       {row.title}
                                     </p>
                                     <CharCount value={row.title} max={60} />
                                   </div>
-                                  <div className="max-w-[240px] px-6 py-4">
+                                  <div className="min-w-0 px-4 py-4">
                                     <p
                                       className={`line-clamp-2 text-xs ${row.newTitle ? "text-white/90" : "text-white/30"}`}
                                     >
@@ -805,13 +813,13 @@ function Index() {
                                     </p>
                                     <CharCount value={row.newTitle ?? ""} max={60} />
                                   </div>
-                                  <div className="max-w-[280px] px-6 py-4">
+                                  <div className="min-w-0 px-4 py-4">
                                     <p className="line-clamp-2 text-xs text-white/70">
                                       {row.description}
                                     </p>
                                     <CharCount value={row.description} max={155} />
                                   </div>
-                                  <div className="max-w-[300px] px-6 py-4">
+                                  <div className="min-w-0 px-4 py-4">
                                     <p
                                       className={`line-clamp-2 text-xs ${row.newDescription ? "text-white/90" : "text-white/30"}`}
                                     >
@@ -819,7 +827,7 @@ function Index() {
                                     </p>
                                     <CharCount value={row.newDescription ?? ""} max={155} />
                                   </div>
-                                  <div className="px-6 py-4">
+                                  <div className="px-4 py-4">
                                     <div className="flex justify-end gap-1.5">
                                       <button
                                         disabled={
