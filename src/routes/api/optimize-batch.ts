@@ -192,41 +192,63 @@ export const Route = createFileRoute("/api/optimize-batch")({
           let content = "{}";
 
           if (provider === "gemini") {
-            // Integração NATIVA do Gemini via REST Fetch (Ignorando o SDK OpenAI)
             const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+            const geminiPayload = {
+              systemInstruction: {
+                parts: [
+                  {
+                    text: `${SYSTEM_PROMPT}\n\nREGRAS DO USUÁRIO:\n${userPrompt || "Otimize titles e descriptions para SEO."}`,
+                  },
+                ],
+              },
+              contents: [
+                {
+                  role: "user",
+                  parts: [{ text: JSON.stringify({ batch: enrichedBatch }) }],
+                },
+              ],
+              generationConfig: {
+                temperature: 0.3,
+                responseMimeType: "application/json",
+              },
+              safetySettings: [
+                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+              ],
+            };
+
             const geminiRes = await fetch(geminiUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                systemInstruction: {
-                  parts: [
-                    {
-                      text: `${SYSTEM_PROMPT}\n\nREGRAS DO USUÁRIO:\n${userPrompt || "Otimize titles e descriptions para SEO."}`,
-                    },
-                  ],
-                },
-                contents: [
-                  {
-                    role: "user",
-                    parts: [{ text: JSON.stringify({ batch: enrichedBatch }) }],
-                  },
-                ],
-                generationConfig: {
-                  temperature: 0.3,
-                  responseMimeType: "application/json",
-                },
-              }),
+              body: JSON.stringify(geminiPayload),
             });
 
             if (!geminiRes.ok) {
-              const errStatus = geminiRes.status;
-              throw Object.assign(new Error(`Erro Gemini HTTP ${errStatus}`), {
-                status: errStatus,
-              });
+              const errorText = await geminiRes.text();
+              console.error("Gemini Raw Error:", errorText);
+              let errorMessage = `Erro Gemini HTTP ${geminiRes.status}`;
+              try {
+                const parsedErr = JSON.parse(errorText);
+                if (parsedErr.error && parsedErr.error.message) {
+                  errorMessage = `Gemini: ${parsedErr.error.message}`;
+                }
+              } catch (e) {}
+              throw Object.assign(new Error(errorMessage), { status: geminiRes.status });
             }
 
             const geminiData = await geminiRes.json();
-            content = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+
+            const firstCandidate = geminiData.candidates?.[0];
+            if (firstCandidate?.finishReason !== "STOP") {
+              throw new Error(
+                `Geração Gemini interrompida. Motivo: ${firstCandidate?.finishReason || "Desconhecido"}`,
+              );
+            }
+
+            content = firstCandidate?.content?.parts?.[0]?.text ?? "{}";
           } else {
             // Integração Padrão OpenAI (Groq, Cerebras, ChatGPT)
             let baseURL: string | undefined = undefined;
