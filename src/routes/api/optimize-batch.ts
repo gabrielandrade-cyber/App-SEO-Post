@@ -197,9 +197,9 @@ export const Route = createFileRoute("/api/optimize-batch")({
           model = "llama-3.3-70b-versatile";
         } else if (provider === "cerebras") {
           baseURL = "https://api.cerebras.ai/v1";
-          model = "llama-3.3-70b";
+          model = "gpt-oss-120b"; // Atualizado para o modelo ativo na Cerebras
         } else if (provider === "gemini") {
-          baseURL = "https://generativelanguage.googleapis.com/v1beta/openai";
+          baseURL = "https://generativelanguage.googleapis.com/v1beta/openai/"; // A barra final é obrigatória
           model = "gemini-1.5-flash";
           isGemini = true;
         }
