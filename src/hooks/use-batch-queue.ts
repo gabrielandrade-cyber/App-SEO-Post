@@ -20,6 +20,7 @@ interface BatchResponse {
 interface UseBatchQueueOptions {
   apiKey: string;
   model: string;
+  userPrompt?: string;
   batchSize?: number;
   onRowsChanged?: () => void;
   onPaused?: (message: string) => void;
@@ -142,13 +143,17 @@ export function useBatchQueue({
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro inesperado na fila.";
       const queue = await getQueueState();
-      await setQueueState({ status: "error", currentIndex: queue.currentIndex, lastError: message });
+      await setQueueState({
+        status: "error",
+        currentIndex: queue.currentIndex,
+        lastError: message,
+      });
       setLastError(message);
       setStatus("error");
     } finally {
       runningRef.current = false;
     }
-  }, [apiKey, batchSize, model, onPaused, onRowsChanged]);
+  }, [apiKey, batchSize, model, onPaused, onRowsChanged, userPrompt]);
 
   const resume = useCallback(() => run(), [run]);
 
