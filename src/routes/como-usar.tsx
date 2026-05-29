@@ -37,7 +37,7 @@ function ComoUsar() {
                 <p className="text-white/60 leading-relaxed mb-6">
                   Para usar a inteligência artificial gratuitamente, precisa de gerar uma chave (API Key) num dos fornecedores suportados.
                 </p>
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]">
                     <h4 className="font-semibold text-white/80 text-sm mb-1">Google Gemini (Recomendado)</h4>
                     <p className="text-[11px] text-white/50 mb-3">Integração nativa Google. Excelente qualidade de texto e contexto.</p>
@@ -57,6 +57,13 @@ function ComoUsar() {
                     <p className="text-[11px] text-white/50 mb-3">Respostas instantâneas e limite de 30 requisições por minuto.</p>
                     <a href="https://cloud.cerebras.ai" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-indigo-400 hover:text-indigo-300">
                       Criar conta Cerebras <ArrowRight className="h-3 w-3" />
+                    </a>
+                  </div>
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]">
+                    <h4 className="font-semibold text-white/80 text-sm mb-1">ChatGPT (OpenAI)</h4>
+                    <p className="text-[11px] text-white/50 mb-3">Qualidade premium. Requer conta com créditos pagos ativos para funcionar.</p>
+                    <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 hover:text-emerald-300">
+                      Gerar chave OpenAI <ArrowRight className="h-3 w-3" />
                     </a>
                   </div>
                 </div>
@@ -137,7 +144,7 @@ function ComoUsar() {
                 <div>
                   <h3 className="text-xl font-bold text-white mb-2">4. Exportar Resultados</h3>
                   <p className="text-white/60 leading-relaxed text-sm">
-                    Assim que a IA terminar o seu trabalho, basta clicar em Download. O ficheiro resultante será um CSV formatado que pode ser importado diretamente para o seu CMS favorito (como WordPress, Shopify, Magento, entre outros).
+                    Assim que a IA terminar o seu trabalho, basta clicar em Download. O ficheiro resultante será um CSV formatado que pode ser importado diretamente para o app da liveSEO.
                   </p>
                 </div>
               </div>
@@ -153,10 +160,10 @@ function ComoUsar() {
               <div>
                 <h3 className="text-xl font-bold text-white mb-2">Como a IA sabe o que escrever?</h3>
                 <p className="text-white/60 leading-relaxed mb-4">
-                  A aplicação combina as informações extraídas <strong>através do texto da URL</strong> (ex: extrai palavras como "tenis", "masculino", "corrida" de <code className="text-fuchsia-300">loja.com/tenis-masculino-corrida</code>) com um <strong>Prompt de Sistema</strong> extremamente robusto e focado em SEO.
+                  A aplicação não tenta adivinhar o contexto apenas olhando para o link! O nosso sistema atua como um <strong>mini-rastreador (crawler)</strong>. Antes de pedir à IA para escrever, o servidor entra na URL, raspa o conteúdo HTML real da página e envia o texto estruturado para a inteligência artificial.
                 </p>
                 <p className="text-white/60 leading-relaxed">
-                  Você tem controlo total sobre este processo! No Workspace, procure por <strong>Personalizar Prompts</strong> na barra lateral esquerda. Lá pode ajustar o tom de voz, adicionar regras para a sua marca, ou mudar completamente o foco das descrições e títulos gerados.
+                  Tudo isso é combinado com um <strong>Prompt de Sistema</strong> extremamente robusto e focado em SEO. No Workspace, procure por "Configurar Prompts da IA" na barra lateral. Lá pode ajustar o tom de voz, adicionar regras da sua marca, ou mudar completamente o foco das descrições geradas.
                 </p>
               </div>
             </div>
