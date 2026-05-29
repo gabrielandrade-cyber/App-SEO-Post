@@ -72,7 +72,7 @@ const AI_PROVIDER_OPTIONS: Array<{
     img: "/cerebras-color.png",
     color: "from-slate-800 to-slate-900",
   },
-  { id: "openai", label: "ChatGPT", Icon: Sparkles, color: "from-emerald-700 to-slate-900" },
+  { id: "openai", label: "ChatGPT", img: "/chatgpt.svg", color: "from-emerald-700 to-slate-900" },
 ];
 
 function GlassCard({
