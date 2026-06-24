@@ -6,13 +6,11 @@ import {
   AlertTriangle,
   Check,
   Download,
-  FileText,
   Inbox,
   Loader2,
   Lock,
   Pause,
   Play,
-  RotateCcw,
   Settings2,
   Sparkles,
   Upload,
@@ -26,8 +24,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { useBatchQueue } from "@/hooks/use-batch-queue";
 import {
   clearCsvData,
@@ -43,7 +41,7 @@ import { getActiveKey, useSettings, type AIProvider, type CsvRow } from "@/lib/s
 export const Route = createFileRoute("/")({ component: Index });
 
 const SERP_GRID_TEMPLATE =
-  "minmax(120px, 0.9fr) minmax(135px, 1fr) minmax(135px, 1fr) minmax(170px, 1.25fr) minmax(170px, 1.25fr) 58px";
+  "minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 1.45fr) 58px";
 
 const PROVIDER_LABELS: Record<AIProvider, string> = {
   gemini: "Gemini",
@@ -96,7 +94,7 @@ function CharCount({ value, max }: { value: string; max: number }) {
   const ratio = len / max;
   const color = ratio > 1 ? "text-rose-400" : ratio > 0.9 ? "text-amber-400" : "text-emerald-400";
   return (
-    <span className={`ml-2 text-[10px] font-mono ${color}`}>
+    <span className={`mt-1 block text-right font-mono text-[10px] ${color}`}>
       {len}/{max}
     </span>
   );
@@ -174,26 +172,22 @@ function Index() {
   const [quotaModalOpen, setQuotaModalOpen] = useState(false);
   const [quotaMessage, setQuotaMessage] = useState("");
   const [optimizingRowId, setOptimizingRowId] = useState<number | null>(null);
+  const [brandPersonaModalOpen, setBrandPersonaModalOpen] = useState(false);
+  const [brandPersonaDraft, setBrandPersonaDraft] = useState(settings.brandPersona || "");
+  const [editingCell, setEditingCell] = useState<{
+    id: number;
+    field: "newTitle" | "newDescription";
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
 
   const activeKey = getActiveKey(settings);
   const refreshRows = useCallback(() => setRefreshKey((value) => value + 1), []);
-  const batchUserPrompt = useMemo(
-    () =>
-      [
-        "REGRAS PARA META TITLE:",
-        settings.titlePrompt,
-        "REGRAS PARA META DESCRIPTION:",
-        settings.descPrompt,
-      ].join("\n\n"),
-    [settings.descPrompt, settings.titlePrompt],
-  );
 
   const queue = useBatchQueue({
     apiKey: activeKey,
     provider: settings.provider,
-    userPrompt: batchUserPrompt,
+    brandPersona: settings.brandPersona,
     onRowsChanged: refreshRows,
     onPaused: (message) => {
       setQuotaMessage(message);
@@ -205,7 +199,7 @@ function Index() {
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => tableScrollRef.current,
-    estimateSize: () => 96,
+    estimateSize: () => 92,
     overscan: 12,
   });
 
@@ -330,6 +324,41 @@ function Index() {
     void queue.pause();
   }, [queue.pause]);
 
+  const openBrandPersonaModal = useCallback(() => {
+    setBrandPersonaDraft(settings.brandPersona || "");
+    setBrandPersonaModalOpen(true);
+  }, [settings.brandPersona]);
+
+  const saveBrandPersona = useCallback(() => {
+    dispatch({ type: "SET_BRAND_PERSONA", payload: brandPersonaDraft });
+    setBrandPersonaModalOpen(false);
+    toast.success("Tom de voz guardado.");
+  }, [brandPersonaDraft, dispatch]);
+
+  const handleCellEdit = useCallback(
+    async (id: number, field: "newTitle" | "newDescription", value: string) => {
+      setRowCache((prev) => {
+        const current = prev.get(id);
+        if (!current) return prev;
+
+        const next = new Map(prev);
+        next.set(id, { ...current, [field]: value });
+        return next;
+      });
+
+      const update: Partial<CsvRow> & Pick<CsvRow, "id"> = { id };
+      update[field] = value;
+
+      try {
+        await updateCsvRows([update]);
+      } catch {
+        toast.error("Nao foi possivel guardar a edicao.");
+        refreshRows();
+      }
+    },
+    [refreshRows],
+  );
+
   const optimizeRow = useCallback(
     async (rowId: number) => {
       if (!preflight()) return;
@@ -346,7 +375,7 @@ function Index() {
           body: JSON.stringify({
             apiKey: activeKey,
             provider: settings.provider,
-            userPrompt: batchUserPrompt,
+            brandPersona: settings.brandPersona,
             batch: [{ id: row.id, url: row.url, title: row.title, description: row.description }],
           }),
         });
@@ -376,7 +405,7 @@ function Index() {
         setOptimizingRowId(null);
       }
     },
-    [activeKey, batchUserPrompt, preflight, refreshRows, settings.provider],
+    [activeKey, preflight, refreshRows, settings.brandPersona, settings.provider],
   );
 
   const downloadCsv = useCallback(async () => {
@@ -435,7 +464,42 @@ function Index() {
         </DialogContent>
       </Dialog>
 
-      <main className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-6 py-8 lg:grid-cols-[320px_1fr]">
+      <Dialog open={brandPersonaModalOpen} onOpenChange={setBrandPersonaModalOpen}>
+        <DialogContent className="max-w-2xl border border-white/10 bg-slate-950/95 text-white backdrop-blur-2xl sm:rounded-[28px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <Settings2 className="h-4 w-4 text-fuchsia-300" />
+              Tom de Voz da Marca
+            </DialogTitle>
+            <DialogDescription className="text-white/60">
+              Guarde aqui a persona e as diretrizes de linguagem usadas pela IA.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={brandPersonaDraft}
+            onChange={(e) => setBrandPersonaDraft(e.target.value)}
+            placeholder="Ex: A persona da marca é amigável, acessível e focada na Classe C. O tom é íntimo e otimista."
+            className="min-h-[220px] resize-none rounded-2xl border-white/10 bg-black/30 p-4 text-sm text-white placeholder:text-white/30"
+          />
+          <DialogFooter className="gap-2 sm:gap-2">
+            <button
+              onClick={() => setBrandPersonaModalOpen(false)}
+              className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/80"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={saveBrandPersona}
+              className="inline-flex items-center gap-2 rounded-full border border-fuchsia-300/30 bg-fuchsia-500/20 px-5 py-2 text-xs font-semibold text-white shadow-[0_0_20px_-8px_rgba(217,70,239,0.9)]"
+            >
+              <Wand2 className="h-3.5 w-3.5 text-fuchsia-200" />
+              Guardar tom de voz
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <main className="mx-auto grid w-full max-w-[1760px] grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[300px_minmax(0,1fr)] xl:px-6">
         <aside className="space-y-6">
           <GlassCard className="p-5">
             <h2 className="mb-4 text-sm font-semibold text-white/90">AI Provider</h2>
@@ -555,94 +619,39 @@ function Index() {
               )}
             </div>
           </GlassCard>
-
-          <Dialog>
-            <DialogTrigger asChild>
-              <button className="group relative w-full overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-indigo-500/20 via-fuchsia-500/15 to-rose-500/20 p-5 text-left backdrop-blur-2xl transition-all duration-300 hover:border-white/30">
-                <div className="relative flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-400 to-fuchsia-500 shadow-[0_0_20px_-5px_rgba(168,85,247,0.8)]">
-                    <Settings2 className="h-5 w-5 text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-white">Configurar Prompts da IA</p>
-                    <p className="text-xs text-white/60">Mantidos para compatibilidade</p>
-                  </div>
-                  <Wand2 className="h-4 w-4 text-white/60" />
-                </div>
-              </button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl border border-white/10 bg-slate-900/90 text-white backdrop-blur-2xl sm:rounded-[28px]">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-white">
-                  <Wand2 className="h-4 w-4 text-fuchsia-300" />
-                  Engenharia de Prompts
-                </DialogTitle>
-                <DialogDescription className="text-white/60">
-                  O batch usa um prompt curto no servidor.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-white/70">
-                    Prompt Title
-                  </label>
-                  <textarea
-                    value={settings.titlePrompt}
-                    onChange={(event) =>
-                      dispatch({ type: "SET_TITLE_PROMPT", payload: event.target.value })
-                    }
-                    rows={4}
-                    className="w-full resize-none rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/90 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-white/70">
-                    Prompt Description
-                  </label>
-                  <textarea
-                    value={settings.descPrompt}
-                    onChange={(event) =>
-                      dispatch({ type: "SET_DESC_PROMPT", payload: event.target.value })
-                    }
-                    rows={4}
-                    className="w-full resize-none rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/90 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
-                  />
-                </div>
-              </div>
-              <DialogFooter className="gap-2 sm:gap-2">
-                <button
-                  onClick={() => dispatch({ type: "RESET_PROMPTS" })}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/80"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                  Restaurar padrao
-                </button>
-                <DialogTrigger asChild>
-                  <button className="rounded-full border border-white/20 bg-white/10 px-5 py-2 text-xs font-semibold text-white">
-                    Guardar prompts
-                  </button>
-                </DialogTrigger>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
         </aside>
 
-        <section className="space-y-6">
-          <GlassCard className="p-6">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              className="hidden"
-              onChange={onFileChange}
-            />
-            {!fileName ? (
+        <section className="min-w-0">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <GlassCard className="flex min-h-[220px] flex-col p-5">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={onFileChange}
+              />
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-white/90">1. Base de Dados (CSV)</h2>
+                  <p className="mt-1 text-xs text-white/50">{progressLabel}</p>
+                </div>
+                {fileName && (
+                  <button
+                    onClick={() => void clearFile()}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/5 text-white/60 transition-all duration-300 hover:bg-white/10 hover:text-white"
+                    title="Remover CSV"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
               <div
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={onDrop}
-                className="group relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-white/15 bg-white/[0.02] px-6 py-12 text-center transition-all duration-300 hover:border-white/30 hover:bg-white/[0.05]"
+                className="group relative flex flex-1 flex-col items-center justify-center rounded-2xl border-2 border-dashed border-indigo-300/20 bg-indigo-400/[0.04] px-6 py-8 text-center transition-all duration-300 hover:border-indigo-200/40 hover:bg-indigo-400/[0.08]"
               >
-                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-400/30 to-fuchsia-500/30 backdrop-blur-xl">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-400/30 to-fuchsia-500/30 backdrop-blur-xl">
                   {isImporting ? (
                     <Loader2 className="h-6 w-6 animate-spin text-white" />
                   ) : (
@@ -652,40 +661,54 @@ function Index() {
                 <p className="text-sm font-medium text-white/90">
                   {isImporting
                     ? `A importar ${importedRows} linhas...`
-                    : "Arraste o seu ficheiro CSV ou clique para procurar"}
+                    : fileName
+                      ? fileName
+                      : "Arraste o CSV ou clique para procurar"}
                 </p>
-                <p className="mt-1 text-xs text-white/50">Suporta CSVs massivos via IndexedDB</p>
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isImporting}
                   className="mt-5 rounded-full bg-white/10 px-4 py-2 text-xs font-medium text-white backdrop-blur-xl transition-all duration-300 hover:bg-white/20 disabled:opacity-50"
                 >
-                  Selecionar ficheiro
+                  {fileName ? "Substituir ficheiro" : "Selecionar ficheiro"}
                 </button>
               </div>
-            ) : (
-              <div className="flex items-center justify-between rounded-2xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-400/20">
-                    <FileText className="h-5 w-5 text-emerald-300" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">{fileName}</p>
-                    <p className="text-xs text-white/50">{progressLabel}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => void clearFile()}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-white/60 transition-all duration-300 hover:bg-white/10 hover:text-white"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-          </GlassCard>
+            </GlassCard>
 
-          <GlassCard className="overflow-hidden">
-            <div className="flex flex-col gap-3 border-b border-white/5 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <GlassCard className="flex min-h-[220px] flex-col p-5">
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold text-white/90">
+                  2. Tom de Voz da Marca (Opcional)
+                </h2>
+                <p className="mt-1 text-xs text-white/50">
+                  Se vazio, a IA usa um tom neutro e comercial com base no conteúdo rastreado.
+                </p>
+              </div>
+              <button
+                onClick={openBrandPersonaModal}
+                className="group relative flex min-h-[96px] items-center gap-3 overflow-hidden rounded-2xl border border-fuchsia-300/25 bg-gradient-to-br from-indigo-500/20 via-fuchsia-500/20 to-rose-500/20 p-4 text-left shadow-[0_0_28px_-12px_rgba(217,70,239,0.95)] transition-all duration-300 hover:border-white/35 hover:from-indigo-500/28 hover:via-fuchsia-500/28 hover:to-rose-500/28"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-400 to-fuchsia-500 shadow-[0_0_22px_-6px_rgba(168,85,247,0.9)]">
+                  <Settings2 className="h-4 w-4 text-white" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-white">
+                    {settings.brandPersona ? "Editar tom de voz" : "Configurar tom de voz"}
+                  </span>
+                  <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-white/60">
+                    {settings.brandPersona ||
+                      "Adicione persona, linguagem e diretrizes para a IA usar nas otimizações."}
+                  </span>
+                </span>
+                <Wand2 className="h-4 w-4 shrink-0 text-white/65 transition-transform duration-300 group-hover:rotate-12" />
+              </button>
+            </GlassCard>
+          </div>
+        </section>
+
+        <section className="min-w-0 lg:col-span-2">
+          <GlassCard className="overflow-hidden !p-4 md:!p-5">
+            <div className="flex flex-col gap-3 border-b border-white/5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-white/90">SERP DataGrid</h2>
                 <p className="text-xs text-white/50">{progressLabel}</p>
@@ -731,7 +754,7 @@ function Index() {
 
             {fileName ? (
               <>
-                <div className="border-b border-white/5 px-6 py-3">
+                <div className="border-b border-white/5 px-4 py-3">
                   <div className="h-1.5 overflow-hidden rounded-full bg-white/5">
                     <div
                       className="h-full rounded-full bg-gradient-to-r from-emerald-300 to-indigo-300 transition-all duration-300"
@@ -743,8 +766,8 @@ function Index() {
                   )}
                 </div>
 
-                <div className="overflow-x-auto">
-                  <div className="min-w-[780px] xl:min-w-0">
+                <div className="overflow-hidden">
+                  <div className="min-w-0">
                     <div
                       className="grid bg-white/[0.04] text-[11px] uppercase tracking-wider text-white/50"
                       style={{ gridTemplateColumns: SERP_GRID_TEMPLATE }}
@@ -759,7 +782,7 @@ function Index() {
 
                     <div
                       ref={tableScrollRef}
-                      className="h-[calc(100vh-280px)] min-h-[400px] overflow-auto"
+                      className="h-[calc(100vh-430px)] min-h-[360px] overflow-y-auto overflow-x-hidden"
                     >
                       <div
                         className="relative"
@@ -767,14 +790,27 @@ function Index() {
                       >
                         {virtualRows.map((virtualRow) => {
                           const row = rowCache.get(virtualRow.index + 1);
+                          const isEditingTitle = Boolean(
+                            row && editingCell?.id === row.id && editingCell.field === "newTitle",
+                          );
+                          const isEditingDescription = Boolean(
+                            row &&
+                            editingCell?.id === row.id &&
+                            editingCell.field === "newDescription",
+                          );
+                          const isEditingRow = isEditingTitle || isEditingDescription;
 
                           return (
                             <div
                               key={virtualRow.key}
                               data-index={virtualRow.index}
                               ref={rowVirtualizer.measureElement}
-                              className={`absolute left-0 top-0 grid w-full border-t border-white/5 transition-colors duration-200 hover:bg-white/[0.03] ${
-                                virtualRow.index % 2 === 1 ? "bg-white/[0.015]" : ""
+                              className={`absolute left-0 top-0 grid w-full border-t border-white/5 transition-colors duration-200 ${
+                                isEditingRow
+                                  ? "z-20 bg-slate-950/90 shadow-2xl"
+                                  : `z-0 hover:bg-white/[0.03] ${
+                                      virtualRow.index % 2 === 1 ? "bg-white/[0.015]" : ""
+                                    }`
                               }`}
                               style={{
                                 gridTemplateColumns: SERP_GRID_TEMPLATE,
@@ -783,40 +819,80 @@ function Index() {
                             >
                               {row ? (
                                 <>
-                                  <div className="min-w-0 px-4 py-4">
+                                  <div className="min-w-0 px-4 py-3">
                                     <span className="block truncate font-mono text-xs text-white/70">
                                       {row.url.replace(/^https?:\/\//, "")}
                                     </span>
                                   </div>
-                                  <div className="min-w-0 px-4 py-4">
+                                  <div className="min-w-0 px-4 py-3">
                                     <p className="line-clamp-2 text-xs text-white/70">
                                       {row.title}
                                     </p>
                                     <CharCount value={row.title} max={60} />
                                   </div>
-                                  <div className="min-w-0 px-4 py-4">
-                                    <p
-                                      className={`line-clamp-2 text-xs ${row.newTitle ? "text-white/90" : "text-white/30"}`}
-                                    >
-                                      {row.newTitle || "Ainda nao gerado"}
-                                    </p>
+                                  <div className="min-w-0 px-4 py-3">
+                                    <div className="relative min-h-10 w-full">
+                                      <textarea
+                                        key={`title-${row.id}-${row.newTitle ?? ""}`}
+                                        defaultValue={row.newTitle || ""}
+                                        onFocus={() => {
+                                          setEditingCell({ id: row.id, field: "newTitle" });
+                                          window.setTimeout(() => rowVirtualizer.measure(), 0);
+                                          window.setTimeout(() => rowVirtualizer.measure(), 220);
+                                        }}
+                                        onBlur={(e) => {
+                                          void handleCellEdit(row.id, "newTitle", e.target.value);
+                                          setEditingCell(null);
+                                          window.setTimeout(() => rowVirtualizer.measure(), 0);
+                                          window.setTimeout(() => rowVirtualizer.measure(), 220);
+                                        }}
+                                        className={`w-full resize-none overflow-y-auto rounded-md p-2 text-sm text-white/90 outline-none transition-all duration-200 ${
+                                          isEditingTitle
+                                            ? "h-28 bg-slate-900 shadow-2xl ring-1 ring-indigo-500"
+                                            : "h-10 bg-transparent hover:bg-white/5"
+                                        }`}
+                                        placeholder="O título gerado aparecerá aqui..."
+                                      />
+                                    </div>
                                     <CharCount value={row.newTitle ?? ""} max={60} />
                                   </div>
-                                  <div className="min-w-0 px-4 py-4">
+                                  <div className="min-w-0 px-4 py-3">
                                     <p className="line-clamp-2 text-xs text-white/70">
                                       {row.description}
                                     </p>
                                     <CharCount value={row.description} max={155} />
                                   </div>
-                                  <div className="min-w-0 px-4 py-4">
-                                    <p
-                                      className={`line-clamp-2 text-xs ${row.newDescription ? "text-white/90" : "text-white/30"}`}
-                                    >
-                                      {row.newDescription || "Ainda nao gerada"}
-                                    </p>
+                                  <div className="min-w-0 px-4 py-3">
+                                    <div className="relative min-h-12 w-full">
+                                      <textarea
+                                        key={`description-${row.id}-${row.newDescription ?? ""}`}
+                                        defaultValue={row.newDescription || ""}
+                                        onFocus={() => {
+                                          setEditingCell({ id: row.id, field: "newDescription" });
+                                          window.setTimeout(() => rowVirtualizer.measure(), 0);
+                                          window.setTimeout(() => rowVirtualizer.measure(), 220);
+                                        }}
+                                        onBlur={(e) => {
+                                          void handleCellEdit(
+                                            row.id,
+                                            "newDescription",
+                                            e.target.value,
+                                          );
+                                          setEditingCell(null);
+                                          window.setTimeout(() => rowVirtualizer.measure(), 0);
+                                          window.setTimeout(() => rowVirtualizer.measure(), 220);
+                                        }}
+                                        className={`w-full resize-none overflow-y-auto rounded-md p-2 text-sm text-white/80 outline-none transition-all duration-200 ${
+                                          isEditingDescription
+                                            ? "h-40 bg-slate-900 shadow-2xl ring-1 ring-indigo-500"
+                                            : "h-12 bg-transparent hover:bg-white/5"
+                                        }`}
+                                        placeholder="A descrição gerada aparecerá aqui..."
+                                      />
+                                    </div>
                                     <CharCount value={row.newDescription ?? ""} max={155} />
                                   </div>
-                                  <div className="px-4 py-4">
+                                  <div className="px-4 py-3">
                                     <div className="flex justify-end gap-1.5">
                                       <button
                                         disabled={
@@ -854,7 +930,7 @@ function Index() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between border-t border-white/5 px-6 py-4">
+                <div className="flex items-center justify-between border-t border-white/5 px-4 py-4">
                   <p className="text-xs text-white/50">
                     Pronto para exportar {rowCount} resultado{rowCount !== 1 ? "s" : ""}
                   </p>

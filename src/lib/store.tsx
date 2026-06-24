@@ -2,7 +2,7 @@
  * Application state store with localStorage persistence.
  *
  * Manages: AI provider selection (Gemini/Groq/Cerebras/ChatGPT),
- * API key per provider, and custom prompts for Title/Description.
+ * API key per provider, and optional brand persona guidance.
  */
 
 import React, { createContext, useContext } from "react";
@@ -17,8 +17,7 @@ export interface AppSettings {
   groqKey: string;
   cerebrasKey: string;
   openaiKey: string;
-  titlePrompt: string;
-  descPrompt: string;
+  brandPersona?: string;
 }
 
 export interface CsvRow {
@@ -36,79 +35,6 @@ export interface CsvRow {
   optimizedDesc?: boolean;
 }
 
-// ─── Defaults ───────────────────────────────────────────────────────────────
-
-export const DEFAULT_TITLE_PROMPT = `Você é um Especialista em SEO Sênior e Copywriter de alta conversão.
-
-<tarefa>
-Analise a URL fornecida e crie um Meta Title otimizado para o produto/página dessa URL.
-</tarefa>
-
-<regras_inviolaveis>
-1. TAMANHO: O título DEVE ter entre 50 e 60 caracteres. Conte cada caractere incluindo espaços.
-2. ESTRUTURA: Use a fórmula: [Nome do Produto] + [Tipo/Categoria] + [Diferencial Principal].
-3. PROIBIDO incluir nomes de lojas, marcas de e-commerce ou nomes de empresas (ex: "MyFavorite", "Amazon", "Shopee").
-4. PROIBIDO incluir códigos de produto, SKUs ou números de referência (ex: "501B", "CF008679", "BL010042").
-5. Use apenas palavras descritivas sobre o produto em si: material, cor, funcionalidade, público-alvo.
-6. FOCO: Identifique o tipo de produto pela URL e construa o título baseado nas características do produto.
-</regras_inviolaveis>
-
-<exemplo_correto>
-"ENERMAX: SUPLEMENTO MINERAL ADENSADO PARA BOVINOS DE CORTE"
-"Saia Curta Estampada com Babados - Tendência Verão Feminina"
-"Calça Jeans Cintura Alta Feminina - Conforto e Estilo Premium"
-</exemplo_correto>
-
-<exemplo_errado_nunca_faca>
-"Saia Curta Estampada Babados MyFavorite" ← contém nome da loja
-"BERMUDA JEANS 501B APLICAÇÕES" ← contém código do produto
-"Calça Jeans 501CF008679 Full Length" ← contém SKU
-</exemplo_errado_nunca_faca>
-
-<formato_saida>
-Responda OBRIGATORIAMENTE em formato JSON válido contendo exatamente estas duas chaves:
-{
-  "text": "O texto do título aqui",
-  "justification": "Justificativa de 1 frase explicando por que este título traz CTR e faz sentido com o produto"
-}
-Sem aspas em volta do JSON, sem markdown, apenas o JSON puro.
-</formato_saida>`;
-
-export const DEFAULT_DESC_PROMPT = `Você é um Especialista em SEO Sênior e Copywriter de alta conversão.
-
-<tarefa>
-Analise a URL fornecida e crie uma Meta Description persuasiva para o produto/página dessa URL.
-</tarefa>
-
-<regras_inviolaveis>
-1. TAMANHO CIRÚRGICO: O texto DEVE ter entre 140 e 148 caracteres (máximo absoluto: 150). Conte cada caractere incluindo espaços.
-2. ABERTURA: DEVE iniciar com verbo imperativo de ação (Conheça, Confira, Explore, Descubra, Garanta).
-3. PROIBIDO incluir nomes de lojas, marcas de e-commerce ou nomes de empresas.
-4. PROIBIDO incluir códigos de produto, SKUs ou números de referência.
-5. CONSTRUÇÃO: Reforce as características reais do produto — material, funcionalidade, benefícios.
-6. DIFERENCIAL: Destaque o que torna o produto único (qualidade, conforto, tecnologia, design).
-7. SEO LOCAL: Inclua localização APENAS se a URL indicar estratégia de SEO Local.
-8. FECHAMENTO: Termine com CTA forte e direto.
-</regras_inviolaveis>
-
-<exemplo_correto>
-"Conheça a Carabina Naja Wood 5.5mm. Coronha em madeira, sistema Nitro Gás Ram para menor recuo e alta potência. Ideal para tiro esportivo!"
-</exemplo_correto>
-
-<exemplo_errado_nunca_faca>
-"Descubra a Calça Jeans Full Length 501CF008679. Cintura alta..." ← contém código
-"Confira na MyFavorite a blusa de renda..." ← contém nome da loja
-</exemplo_errado_nunca_faca>
-
-<formato_saida>
-Responda OBRIGATORIAMENTE em formato JSON válido contendo exatamente estas duas chaves:
-{
-  "text": "O texto da description aqui",
-  "justification": "Justificativa de 1 frase explicando por que esta descrição traz CTR e faz sentido com o produto"
-}
-Sem aspas em volta do JSON, sem markdown, apenas o JSON puro.
-</formato_saida>`;
-
 const STORAGE_KEY = "serp-studio-settings";
 
 /** Providers that were removed — migrate to gemini */
@@ -123,20 +49,13 @@ export function loadSettings(): AppSettings {
     if (raw) {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
 
-      // Always reset prompts to latest version to avoid stale prompts
-      // Users who customized will lose customization, but this ensures quality
-      const isDefaultish = (p: unknown) =>
-        !p || typeof p !== "string" || p.length < 100 ||
-        p.includes("You are an SEO") || p.includes("Rewrite the") ||
-        !p.includes("<regras_inviolaveis>") ||
-        !p.includes("OBRIGATORIAMENTE em formato JSON");
-
       // Migrate deprecated providers to gemini
       const savedProvider = typeof parsed.provider === "string" ? parsed.provider : "";
-      const provider = DEPRECATED_PROVIDERS.includes(savedProvider) ||
+      const provider =
+        DEPRECATED_PROVIDERS.includes(savedProvider) ||
         !SUPPORTED_PROVIDERS.includes(savedProvider as AIProvider)
-        ? "gemini"
-        : (savedProvider as AIProvider);
+          ? "gemini"
+          : (savedProvider as AIProvider);
 
       return {
         provider,
@@ -144,8 +63,7 @@ export function loadSettings(): AppSettings {
         groqKey: (parsed.groqKey as string) ?? "",
         cerebrasKey: (parsed.cerebrasKey as string) ?? "",
         openaiKey: (parsed.openaiKey as string) ?? (parsed.chatgptKey as string) ?? "",
-        titlePrompt: isDefaultish(parsed.titlePrompt) ? DEFAULT_TITLE_PROMPT : (parsed.titlePrompt as string),
-        descPrompt: isDefaultish(parsed.descPrompt) ? DEFAULT_DESC_PROMPT : (parsed.descPrompt as string),
+        brandPersona: typeof parsed.brandPersona === "string" ? parsed.brandPersona : "",
       };
     }
   } catch {
@@ -157,8 +75,7 @@ export function loadSettings(): AppSettings {
     groqKey: "",
     cerebrasKey: "",
     openaiKey: "",
-    titlePrompt: DEFAULT_TITLE_PROMPT,
-    descPrompt: DEFAULT_DESC_PROMPT,
+    brandPersona: "",
   };
 }
 
@@ -173,10 +90,14 @@ export function saveSettings(settings: AppSettings): void {
 /** Get the active API key for the currently selected provider */
 export function getActiveKey(settings: AppSettings): string {
   switch (settings.provider) {
-    case "gemini": return settings.geminiKey;
-    case "groq": return settings.groqKey;
-    case "cerebras": return settings.cerebrasKey;
-    case "openai": return settings.openaiKey;
+    case "gemini":
+      return settings.geminiKey;
+    case "groq":
+      return settings.groqKey;
+    case "cerebras":
+      return settings.cerebrasKey;
+    case "openai":
+      return settings.openaiKey;
   }
 }
 
@@ -188,14 +109,9 @@ export type SettingsAction =
   | { type: "SET_GROQ_KEY"; payload: string }
   | { type: "SET_CEREBRAS_KEY"; payload: string }
   | { type: "SET_OPENAI_KEY"; payload: string }
-  | { type: "SET_TITLE_PROMPT"; payload: string }
-  | { type: "SET_DESC_PROMPT"; payload: string }
-  | { type: "RESET_PROMPTS" };
+  | { type: "SET_BRAND_PERSONA"; payload: string };
 
-export function settingsReducer(
-  state: AppSettings,
-  action: SettingsAction,
-): AppSettings {
+export function settingsReducer(state: AppSettings, action: SettingsAction): AppSettings {
   let next: AppSettings;
   switch (action.type) {
     case "SET_PROVIDER":
@@ -213,18 +129,8 @@ export function settingsReducer(
     case "SET_OPENAI_KEY":
       next = { ...state, openaiKey: action.payload };
       break;
-    case "SET_TITLE_PROMPT":
-      next = { ...state, titlePrompt: action.payload };
-      break;
-    case "SET_DESC_PROMPT":
-      next = { ...state, descPrompt: action.payload };
-      break;
-    case "RESET_PROMPTS":
-      next = {
-        ...state,
-        titlePrompt: DEFAULT_TITLE_PROMPT,
-        descPrompt: DEFAULT_DESC_PROMPT,
-      };
+    case "SET_BRAND_PERSONA":
+      next = { ...state, brandPersona: action.payload };
       break;
     default:
       return state;
@@ -249,8 +155,6 @@ export function useSettings() {
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, dispatch] = React.useReducer(settingsReducer, undefined, loadSettings);
   return (
-    <SettingsContext.Provider value={{ settings, dispatch }}>
-      {children}
-    </SettingsContext.Provider>
+    <SettingsContext.Provider value={{ settings, dispatch }}>{children}</SettingsContext.Provider>
   );
 }

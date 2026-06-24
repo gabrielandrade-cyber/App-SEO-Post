@@ -11,7 +11,7 @@ interface BatchRow {
 interface OptimizeBatchPayload {
   apiKey?: string;
   provider?: string;
-  userPrompt?: string;
+  brandPersona?: string;
   batch?: BatchRow[];
 }
 
@@ -23,21 +23,63 @@ interface BatchResult {
   descriptionJustification: string;
 }
 
-const SYSTEM_PROMPT = `Você é um Especialista Sênior em SEO. Aplique RIGOROSAMENTE as regras fornecidas pelo usuário para a lista de páginas abaixo.
-Para cada página, você receberá a URL, os metadados atuais e um 'conteudo_extraido' (raspado da página). Baseie sua reescrita nesse conteúdo real.
-OBRIGATÓRIO responder num JSON contendo um array chamado 'resultados'.
-Cada objeto do array deve ter as chaves exatas:
+interface ScrapedPage {
+  fallbackTitle: string;
+  fallbackDesc: string;
+  bodyText: string;
+}
 
-'id' (número original)
+const EMPTY_SCRAPED_PAGE: ScrapedPage = {
+  fallbackTitle: "",
+  fallbackDesc: "",
+  bodyText: "",
+};
 
-'newTitle' (título otimizado, respeitando o limite de caracteres)
+function buildSystemPrompt(brandPersona: string): string {
+  const brandVoiceSection = brandPersona
+    ? `\n<identidade_de_marca>\nAja sob as seguintes diretrizes de tom de voz da marca:\n${brandPersona}\nATENÇÃO: Incorpore este tom emocional e linguagem, mas SEMPRE respeitando a regra de NÃO incluir o nome da marca no título gerado.\n</identidade_de_marca>\n`
+    : "";
 
-'newDescription' (descrição otimizada e persuasiva)
+  return `Você é um Especialista em SEO Sênior e Copywriter de alta conversão.
 
-'titleJustification' (justificativa técnica detalhada para o título escolhido)
+<tarefa>
+Analise o contexto fornecido (URL, conteúdo rastreado e metadados antigos) e crie um Meta Title e uma Meta Description otimizados.
+</tarefa>
+${brandVoiceSection}
+<regras_inviolaveis_title>
+1. TAMANHO: O título DEVE ter entre 50 e 60 caracteres (incluindo espaços).
+2. ESTRUTURA: [Nome do Produto] + [Tipo/Categoria] + [Diferencial Principal].
+3. PROIBIDO: Não inclua nomes de lojas, marcas de e-commerce, SKUs, códigos de produto ou números de referência.
+4. FOCO: Baseie-se nas características descritivas do produto identificadas no contexto.
+</regras_inviolaveis_title>
 
-'descriptionJustification' (justificativa técnica detalhada para a descrição escolhida)
-Não abrevie as respostas. Preencha os campos de justificativa.`;
+<regras_inviolaveis_description>
+1. TAMANHO CIRÚRGICO: A descrição DEVE ter entre 140 e 148 caracteres (máximo absoluto: 150).
+2. ABERTURA: Inicie com verbo imperativo de ação (Conheça, Confira, Explore, etc.).
+3. PROIBIDO: Não inclua nomes de lojas, códigos de produto ou SKUs.
+4. CONSTRUÇÃO: Reforce as características reais do produto, destacando diferenciais.
+5. FECHAMENTO: Termine com um CTA forte e direto.
+</regras_inviolaveis_description>
+
+<formato_saida>
+O seu output final DEVE ser estritamente um array JSON chamado "resultados".
+O utilizador irá enviar um batch (lote) de itens. Para cada item no batch, retorne um objeto com a seguinte estrutura exata:
+
+{
+  "resultados": [
+    {
+      "id": (manter o ID original enviado),
+      "newTitle": "O texto do título gerado aqui",
+      "newDescription": "O texto da description gerada aqui",
+      "titleJustification": "Justificativa de 1 frase explicando por que este título traz CTR",
+      "descriptionJustification": "Justificativa de 1 frase explicando por que esta descrição traz CTR e reflete o tom da marca"
+    }
+  ]
+}
+
+Responda OBRIGATORIAMENTE em formato JSON válido, sem markdown adicional (\`\`\`json), apenas o JSON puro.
+</formato_saida>`;
+}
 
 const SCRAPE_TIMEOUT_MS = 5000;
 const MAX_EXTRACTED_CONTENT_CHARS = 1500;
@@ -81,8 +123,21 @@ function extractBodyText(html: string): string {
     .slice(0, MAX_EXTRACTED_CONTENT_CHARS);
 }
 
-async function scrapeUrl(url: string): Promise<string> {
-  if (!/^https?:\/\//i.test(url)) return "";
+function extractMetadata(html: string): ScrapedPage {
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const descMatch =
+    html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["'][^>]*>/i) ||
+    html.match(/<meta[^>]*content=["']([^"']*)["'][^>]*name=["']description["'][^>]*>/i);
+
+  return {
+    fallbackTitle: titleMatch ? decodeHtmlEntities(titleMatch[1]).replace(/\s+/g, " ").trim() : "",
+    fallbackDesc: descMatch ? decodeHtmlEntities(descMatch[1]).replace(/\s+/g, " ").trim() : "",
+    bodyText: extractBodyText(html),
+  };
+}
+
+async function scrapeUrl(url: string): Promise<ScrapedPage> {
+  if (!/^https?:\/\//i.test(url)) return EMPTY_SCRAPED_PAGE;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
@@ -95,14 +150,14 @@ async function scrapeUrl(url: string): Promise<string> {
       signal: controller.signal,
     });
 
-    if (!response.ok) return "";
+    if (!response.ok) return EMPTY_SCRAPED_PAGE;
 
     const contentType = response.headers.get("content-type") ?? "";
-    if (!contentType.toLowerCase().includes("text/html")) return "";
+    if (!contentType.toLowerCase().includes("text/html")) return EMPTY_SCRAPED_PAGE;
 
-    return extractBodyText(await response.text());
+    return extractMetadata(await response.text());
   } catch {
-    return "";
+    return EMPTY_SCRAPED_PAGE;
   } finally {
     clearTimeout(timeout);
   }
@@ -145,7 +200,7 @@ export const Route = createFileRoute("/api/optimize-batch")({
         const body = (await request.json().catch(() => null)) as OptimizeBatchPayload | null;
         const apiKey = body?.apiKey?.trim();
         const provider = body?.provider?.trim() || "openai";
-        const userPrompt = asString(body?.userPrompt, 12000);
+        const brandPersona = asString(body?.brandPersona, 12000);
         const batch = Array.isArray(body?.batch) ? body.batch : [];
 
         if (!apiKey) {
@@ -171,9 +226,11 @@ export const Route = createFileRoute("/api/optimize-batch")({
 
         const ids = new Set(safeBatch.map((row) => row.id));
         const settledPages = await Promise.allSettled(safeBatch.map((row) => scrapeUrl(row.url)));
+        const systemPrompt = buildSystemPrompt(brandPersona);
 
         const enrichedBatch = settledPages.map((result, index) => {
-          let conteudo = result.status === "fulfilled" ? result.value : "";
+          const scraped = result.status === "fulfilled" ? result.value : EMPTY_SCRAPED_PAGE;
+          let conteudo = scraped.bodyText;
 
           if (provider === "cerebras") {
             conteudo = conteudo.slice(0, 300);
@@ -182,8 +239,8 @@ export const Route = createFileRoute("/api/optimize-batch")({
           return {
             id: safeBatch[index].id,
             url: safeBatch[index].url,
-            title_atual: safeBatch[index].title,
-            desc_atual: safeBatch[index].description,
+            title_atual: safeBatch[index].title || scraped.fallbackTitle,
+            desc_atual: safeBatch[index].description || scraped.fallbackDesc,
             conteudo_extraido: conteudo,
           };
         });
@@ -198,7 +255,7 @@ export const Route = createFileRoute("/api/optimize-batch")({
               systemInstruction: {
                 parts: [
                   {
-                    text: `${SYSTEM_PROMPT}\n\nREGRAS DO USUÁRIO:\n${userPrompt || "Otimize titles e descriptions para SEO."}`,
+                    text: systemPrompt,
                   },
                 ],
               },
@@ -235,7 +292,9 @@ export const Route = createFileRoute("/api/optimize-batch")({
                 if (parsedErr.error && parsedErr.error.message) {
                   errorMessage = `Gemini: ${parsedErr.error.message}`;
                 }
-              } catch (e) {}
+              } catch {
+                // Keep the raw provider error when it is not JSON.
+              }
               throw Object.assign(new Error(errorMessage), { status: geminiRes.status });
             }
 
@@ -270,7 +329,7 @@ export const Route = createFileRoute("/api/optimize-batch")({
               messages: [
                 {
                   role: "system",
-                  content: `${SYSTEM_PROMPT}\n\nREGRAS DO USUÁRIO:\n${userPrompt || "Otimize titles e descriptions para SEO."}`,
+                  content: systemPrompt,
                 },
                 { role: "user", content: JSON.stringify({ batch: enrichedBatch }) },
               ],
