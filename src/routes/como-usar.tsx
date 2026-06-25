@@ -1,7 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { 
-  Key, FileSpreadsheet, Bot, Download,
-  CheckCircle2, AlertCircle, ArrowRight, Sparkles
+import {
+  Key,
+  FileSpreadsheet,
+  Bot,
+  Download,
+  CheckCircle2,
+  AlertCircle,
+  ArrowRight,
+  Sparkles,
 } from "lucide-react";
 
 export const Route = createFileRoute("/como-usar")({
@@ -20,7 +26,8 @@ function ComoUsar() {
             Como usar o SERP Optimizer
           </h1>
           <p className="mx-auto max-w-2xl text-lg text-white/60">
-            Um guia rápido para automatizar a criação de Meta Titles e Descriptions de alta conversão usando inteligência artificial gratuita.
+            Um guia rápido para automatizar a criação de Meta Titles e Descriptions de alta
+            conversão usando inteligência artificial gratuita.
           </p>
         </div>
 
@@ -35,34 +42,65 @@ function ComoUsar() {
               <div>
                 <h3 className="text-xl font-bold text-white mb-2">1. Obter a sua API Key</h3>
                 <p className="text-white/60 leading-relaxed mb-6">
-                  Para usar a inteligência artificial gratuitamente, precisa de gerar uma chave (API Key) num dos fornecedores suportados.
+                  Para usar a inteligência artificial gratuitamente, precisa de gerar uma chave (API
+                  Key) num dos fornecedores suportados.
                 </p>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]">
-                    <h4 className="font-semibold text-white/80 text-sm mb-1">Google Gemini (Recomendado)</h4>
-                    <p className="text-[11px] text-white/50 mb-3">Integração nativa Google. Excelente qualidade de texto e contexto.</p>
-                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-sky-400 hover:text-sky-300">
+                    <h4 className="font-semibold text-white/80 text-sm mb-1">
+                      Google Gemini (Recomendado)
+                    </h4>
+                    <p className="text-[11px] text-white/50 mb-3">
+                      Integração nativa Google. Excelente qualidade de texto e contexto.
+                    </p>
+                    <a
+                      href="https://aistudio.google.com/app/apikey"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-[11px] font-medium text-sky-400 hover:text-sky-300"
+                    >
                       Gerar chave Google <ArrowRight className="h-3 w-3" />
                     </a>
                   </div>
                   <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]">
                     <h4 className="font-semibold text-white/80 text-sm mb-1">Groq</h4>
-                    <p className="text-[11px] text-white/50 mb-3">Modelos ultrarrápidos (Llama 3.3). Muito generoso no free tier.</p>
-                    <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-400 hover:text-amber-300">
+                    <p className="text-[11px] text-white/50 mb-3">
+                      Modelos ultrarrápidos (Llama 3.3). Muito generoso no free tier.
+                    </p>
+                    <a
+                      href="https://console.groq.com/keys"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-[11px] font-medium text-amber-400 hover:text-amber-300"
+                    >
                       Gerar chave Groq <ArrowRight className="h-3 w-3" />
                     </a>
                   </div>
                   <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]">
                     <h4 className="font-semibold text-white/80 text-sm mb-1">Cerebras</h4>
-                    <p className="text-[11px] text-white/50 mb-3">Respostas instantâneas e limite de 30 requisições por minuto.</p>
-                    <a href="https://cloud.cerebras.ai" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-indigo-400 hover:text-indigo-300">
+                    <p className="text-[11px] text-white/50 mb-3">
+                      Respostas instantâneas e limite de 30 requisições por minuto.
+                    </p>
+                    <a
+                      href="https://cloud.cerebras.ai"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-[11px] font-medium text-indigo-400 hover:text-indigo-300"
+                    >
                       Criar conta Cerebras <ArrowRight className="h-3 w-3" />
                     </a>
                   </div>
                   <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4 transition-colors hover:bg-white/[0.04]">
                     <h4 className="font-semibold text-white/80 text-sm mb-1">ChatGPT (OpenAI)</h4>
-                    <p className="text-[11px] text-white/50 mb-3">Qualidade premium. Requer conta com créditos pagos ativos para funcionar.</p>
-                    <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 hover:text-emerald-300">
+                    <p className="text-[11px] text-white/50 mb-3">
+                      Qualidade premium. Requer conta com créditos pagos ativos para funcionar.
+                    </p>
+                    <a
+                      href="https://platform.openai.com/api-keys"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-400 hover:text-emerald-300"
+                    >
                       Gerar chave OpenAI <ArrowRight className="h-3 w-3" />
                     </a>
                   </div>
@@ -79,11 +117,14 @@ function ComoUsar() {
                 <FileSpreadsheet className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white mb-2">2. Preparar o seu Ficheiro CSV</h3>
+                <h3 className="text-xl font-bold text-white mb-2">
+                  2. Preparar o seu Ficheiro CSV
+                </h3>
                 <p className="text-white/60 leading-relaxed mb-6">
-                  A aplicação precisa de uma lista de URLs para saber o que otimizar. Pode exportar isto do Google Search Console, Screaming Frog ou Shopify.
+                  A aplicação precisa de uma lista de URLs para saber o que otimizar. Pode exportar
+                  isto do Google Search Console, Screaming Frog ou Shopify.
                 </p>
-                
+
                 <div className="rounded-2xl border border-white/10 bg-black/20 p-4 font-mono text-[11px] text-white/70">
                   <div className="flex gap-4 border-b border-white/10 pb-2 mb-2 text-white/40">
                     <span className="w-1/3">URL</span>
@@ -103,7 +144,10 @@ function ComoUsar() {
                 </div>
                 <div className="mt-4 flex items-start gap-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 p-4">
                   <AlertCircle className="h-5 w-5 text-indigo-400 shrink-0 mt-0.5" />
-                  <p className="text-sm text-white/70">Apenas a coluna "URL" é estritamente necessária. Se o ficheiro tiver colunas a mais, o sistema irá ignorá-las automaticamente.</p>
+                  <p className="text-sm text-white/70">
+                    Apenas a coluna "URL" é estritamente necessária. Se o ficheiro tiver colunas a
+                    mais, o sistema irá ignorá-las automaticamente.
+                  </p>
                 </div>
               </div>
             </div>
@@ -119,16 +163,22 @@ function ComoUsar() {
                 <div>
                   <h3 className="text-xl font-bold text-white mb-2">3. Otimização Mágica</h3>
                   <p className="text-white/60 leading-relaxed text-sm mb-4">
-                    Arraste o seu CSV para a zona de upload. Selecione a aba do provedor na barra lateral esquerda, insira a API Key e clique em Otimizar.
+                    Arraste o seu CSV para a zona de upload. Selecione a aba do provedor na barra
+                    lateral esquerda, insira a API Key e clique em Otimizar.
                   </p>
                   <div className="space-y-3">
                     <div className="flex items-start gap-2 text-sm text-white/80">
                       <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                      <span>Pode processar <strong>linhas individuais</strong> clicando nos botões da tabela.</span>
+                      <span>
+                        Pode processar <strong>linhas individuais</strong> clicando nos botões da
+                        tabela.
+                      </span>
                     </div>
                     <div className="flex items-start gap-2 text-sm text-white/80">
                       <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
-                      <span>Pode processar <strong>tudo em lote</strong> usando os botões no topo.</span>
+                      <span>
+                        Pode processar <strong>tudo em lote</strong> usando os botões no topo.
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -144,7 +194,9 @@ function ComoUsar() {
                 <div>
                   <h3 className="text-xl font-bold text-white mb-2">4. Exportar Resultados</h3>
                   <p className="text-white/60 leading-relaxed text-sm">
-                    Assim que a IA terminar o seu trabalho, basta clicar em Download. O ficheiro resultante será um CSV formatado que pode ser importado diretamente para o app da liveSEO.
+                    Assim que a IA terminar o seu trabalho, basta clicar em Download. O ficheiro
+                    resultante será um CSV formatado que pode ser importado diretamente para o app
+                    da liveSEO.
                   </p>
                 </div>
               </div>
@@ -158,17 +210,24 @@ function ComoUsar() {
                 <Sparkles className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white mb-2">Como a IA sabe o que escrever?</h3>
+                <h3 className="text-xl font-bold text-white mb-2">
+                  Como a IA sabe o que escrever?
+                </h3>
                 <p className="text-white/60 leading-relaxed mb-4">
-                  A aplicação não tenta adivinhar o contexto apenas olhando para o link! O nosso sistema atua como um <strong>mini-rastreador (crawler)</strong>. Antes de pedir à IA para escrever, o servidor entra na URL, raspa o conteúdo HTML real da página e envia o texto estruturado para a inteligência artificial.
+                  A aplicação não tenta adivinhar o contexto apenas olhando para o link! O nosso
+                  sistema atua como um <strong>mini-rastreador (crawler)</strong>. Antes de pedir à
+                  IA para escrever, o servidor entra na URL, raspa o conteúdo HTML real da página e
+                  envia o texto estruturado para a inteligência artificial.
                 </p>
                 <p className="text-white/60 leading-relaxed">
-                  Tudo isso é combinado com um <strong>Prompt de Sistema</strong> extremamente robusto e focado em SEO. No Workspace, procure por "Configurar Prompts da IA" na barra lateral. Lá pode ajustar o tom de voz, adicionar regras da sua marca, ou mudar completamente o foco das descrições geradas.
+                  Tudo isso é combinado com um <strong>Prompt de Sistema</strong> extremamente
+                  robusto e focado em SEO. No Workspace, procure por "Configurar Prompts da IA" na
+                  barra lateral. Lá pode ajustar o tom de voz, adicionar regras da sua marca, ou
+                  mudar completamente o foco das descrições geradas.
                 </p>
               </div>
             </div>
           </div>
-
         </div>
 
         <div className="mt-16 text-center text-sm text-white/40 flex items-center justify-center gap-1.5 pb-8">
