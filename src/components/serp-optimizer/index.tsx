@@ -36,12 +36,7 @@ import {
 } from "@/lib/db";
 import { importCSVToIndexedDB } from "@/lib/csv-parser";
 import { getActiveKey, useSettings, type AIProvider, type CsvRow } from "@/lib/store";
-import {
-  SERP_GRID_TEMPLATE,
-  PROVIDER_LABELS,
-  sanitizeCsvFileName,
-  buildControlCsv,
-} from "./utils";
+import { SERP_GRID_TEMPLATE, PROVIDER_LABELS, sanitizeCsvFileName, buildControlCsv } from "./utils";
 
 const AI_PROVIDER_OPTIONS: Array<{
   id: AIProvider;
