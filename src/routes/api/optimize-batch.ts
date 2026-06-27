@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import OpenAI from "openai";
+import { getAdapter, type BatchItem, type BatchResult } from "@/lib/ai-service";
+import type { AIProvider } from "@/lib/store";
 
 interface BatchRow {
   id: number;
@@ -10,17 +11,9 @@ interface BatchRow {
 
 interface OptimizeBatchPayload {
   apiKey?: string;
-  provider?: string;
+  provider?: AIProvider;
   brandPersona?: string;
   batch?: BatchRow[];
-}
-
-interface BatchResult {
-  id: number;
-  newTitle: string;
-  newDescription: string;
-  titleJustification: string;
-  descriptionJustification: string;
 }
 
 interface ScrapedPage {
@@ -63,7 +56,7 @@ ${brandVoiceSection}
 
 <formato_saida>
 O seu output final DEVE ser estritamente um array JSON chamado "resultados".
-O utilizador irá enviar um batch (lote) de itens. Para cada item no batch, retorne um objeto com a seguinte estrutura exata:
+Para cada item no batch, retorne um objeto com a seguinte estrutura exata:
 
 {
   "resultados": [
@@ -77,12 +70,12 @@ O utilizador irá enviar um batch (lote) de itens. Para cada item no batch, reto
   ]
 }
 
-Responda OBRIGATORIAMENTE em formato JSON válido, sem markdown adicional (\`\`\`json), apenas o JSON puro.
+Responda OBRIGATORIAMENTE em formato JSON válido.
 </formato_saida>`;
 }
 
-const SCRAPE_TIMEOUT_MS = 5000;
-const MAX_EXTRACTED_CONTENT_CHARS = 1500;
+const SCRAPE_TIMEOUT_MS = 8000;
+const MAX_EXTRACTED_CONTENT_CHARS = 2000;
 
 function asString(value: unknown, max = 5000): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -145,6 +138,7 @@ async function scrapeUrl(url: string): Promise<ScrapedPage> {
   try {
     const response = await fetch(url, {
       headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         Accept: "text/html,application/xhtml+xml",
       },
       signal: controller.signal,
@@ -163,20 +157,8 @@ async function scrapeUrl(url: string): Promise<ScrapedPage> {
   }
 }
 
-function parseJsonObject(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    return match ? JSON.parse(match[0]) : null;
-  }
-}
-
-function normalizeResults(raw: unknown, ids: Set<number>): BatchResult[] {
-  const container = raw as { resultados?: unknown };
-  const resultados = Array.isArray(container?.resultados) ? container.resultados : [];
-
-  return resultados
+function normalizeResults(resultados: any[], ids: Set<number>): BatchResult[] {
+  return (resultados || [])
     .map((item) => {
       const row = item as Record<string, unknown>;
       const id = Number(row.id);
@@ -197,156 +179,69 @@ export const Route = createFileRoute("/api/optimize-batch")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const body = (await request.json().catch(() => null)) as OptimizeBatchPayload | null;
-        const apiKey = body?.apiKey?.trim();
-        const provider = body?.provider?.trim() || "openai";
-        const brandPersona = asString(body?.brandPersona, 12000);
-        const batch = Array.isArray(body?.batch) ? body.batch : [];
-
-        if (!apiKey) {
-          return Response.json({ error: "apiKey em falta" }, { status: 400 });
-        }
-
-        if (batch.length === 0) {
-          return Response.json({ error: "batch vazio" }, { status: 400 });
-        }
-
-        const safeBatch = batch
-          .map((row) => ({
-            id: Number(row.id),
-            url: asString(row.url, 500),
-            title: asString(row.title, 160),
-            description: asString(row.description, 220),
-          }))
-          .filter((row) => Number.isFinite(row.id) && row.url.length > 0);
-
-        if (safeBatch.length === 0) {
-          return Response.json({ error: "batch vazio" }, { status: 400 });
-        }
-
-        const ids = new Set(safeBatch.map((row) => row.id));
-        const settledPages = await Promise.allSettled(safeBatch.map((row) => scrapeUrl(row.url)));
-        const systemPrompt = buildSystemPrompt(brandPersona);
-
-        const enrichedBatch = settledPages.map((result, index) => {
-          const scraped = result.status === "fulfilled" ? result.value : EMPTY_SCRAPED_PAGE;
-          let conteudo = scraped.bodyText;
-
-          if (provider === "cerebras") {
-            conteudo = conteudo.slice(0, 300);
-          }
-
-          return {
-            id: safeBatch[index].id,
-            url: safeBatch[index].url,
-            title_atual: safeBatch[index].title || scraped.fallbackTitle,
-            desc_atual: safeBatch[index].description || scraped.fallbackDesc,
-            conteudo_extraido: conteudo,
-          };
-        });
-
         try {
-          let content = "{}";
+          const body = (await request.json().catch(() => null)) as OptimizeBatchPayload | null;
+          const apiKey = body?.apiKey?.trim();
+          const provider = body?.provider || "openai";
+          const brandPersona = asString(body?.brandPersona, 12000);
+          const batch = Array.isArray(body?.batch) ? body.batch : [];
 
-          if (provider === "gemini") {
-            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
-            const geminiPayload = {
-              systemInstruction: {
-                parts: [
-                  {
-                    text: systemPrompt,
-                  },
-                ],
-              },
-              contents: [
-                {
-                  role: "user",
-                  parts: [{ text: JSON.stringify({ batch: enrichedBatch }) }],
-                },
-              ],
-              generationConfig: {
-                temperature: 0.3,
-                responseMimeType: "application/json",
-              },
-              safetySettings: [
-                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-              ],
-            };
-
-            const geminiRes = await fetch(geminiUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(geminiPayload),
-            });
-
-            if (!geminiRes.ok) {
-              const errorText = await geminiRes.text();
-              console.error("Gemini Raw Error:", errorText);
-              let errorMessage = `Erro Gemini HTTP ${geminiRes.status}`;
-              try {
-                const parsedErr = JSON.parse(errorText);
-                if (parsedErr.error && parsedErr.error.message) {
-                  errorMessage = `Gemini: ${parsedErr.error.message}`;
-                }
-              } catch {
-                // Keep the raw provider error when it is not JSON.
-              }
-              throw Object.assign(new Error(errorMessage), { status: geminiRes.status });
-            }
-
-            const geminiData = await geminiRes.json();
-
-            const firstCandidate = geminiData.candidates?.[0];
-            if (firstCandidate?.finishReason !== "STOP") {
-              throw new Error(
-                `Geração Gemini interrompida. Motivo: ${firstCandidate?.finishReason || "Desconhecido"}`,
-              );
-            }
-
-            content = firstCandidate?.content?.parts?.[0]?.text ?? "{}";
-          } else {
-            // Integração Padrão OpenAI (Groq, Cerebras, ChatGPT)
-            let baseURL: string | undefined = undefined;
-            let model = "gpt-4o-mini";
-
-            if (provider === "groq") {
-              baseURL = "https://api.groq.com/openai/v1";
-              model = "llama-3.3-70b-versatile";
-            } else if (provider === "cerebras") {
-              baseURL = "https://api.cerebras.ai/v1";
-              model = "gpt-oss-120b";
-            }
-
-            const client = new OpenAI({ apiKey, baseURL });
-            const completion = await client.chat.completions.create({
-              model,
-              temperature: 0.3,
-              response_format: { type: "json_object" },
-              messages: [
-                {
-                  role: "system",
-                  content: systemPrompt,
-                },
-                { role: "user", content: JSON.stringify({ batch: enrichedBatch }) },
-              ],
-            });
-
-            content = completion.choices[0]?.message?.content ?? "{}";
+          if (!apiKey) {
+            return Response.json({ error: "Chave API não fornecida." }, { status: 400 });
           }
-          const parsed = parseJsonObject(content);
-          const resultados = normalizeResults(parsed, ids);
 
+          if (batch.length === 0) {
+            return Response.json({ error: "Lote vazio." }, { status: 400 });
+          }
+
+          const safeBatch = batch
+            .map((row) => ({
+              id: Number(row.id),
+              url: asString(row.url, 500),
+              title: asString(row.title, 160),
+              description: asString(row.description, 220),
+            }))
+            .filter((row) => Number.isFinite(row.id) && row.url.length > 0);
+
+          if (safeBatch.length === 0) {
+            return Response.json({ error: "Lote inválido." }, { status: 400 });
+          }
+
+          const ids = new Set(safeBatch.map((row) => row.id));
+          const settledPages = await Promise.allSettled(safeBatch.map((row) => scrapeUrl(row.url)));
+          const systemPrompt = buildSystemPrompt(brandPersona);
+
+          const enrichedBatch: BatchItem[] = settledPages.map((result, index) => {
+            const scraped = result.status === "fulfilled" ? result.value : EMPTY_SCRAPED_PAGE;
+            return {
+              id: safeBatch[index].id,
+              url: safeBatch[index].url,
+              title_atual: safeBatch[index].title || scraped.fallbackTitle,
+              desc_atual: safeBatch[index].description || scraped.fallbackDesc,
+              conteudo_extraido: scraped.bodyText,
+            };
+          });
+
+          const adapter = getAdapter(provider, apiKey);
+          const rawResultados = await adapter.optimizeBatch({
+            apiKey,
+            provider,
+            systemPrompt,
+            batch: enrichedBatch,
+          });
+
+          const resultados = normalizeResults(rawResultados, ids);
           return Response.json({ resultados });
-        } catch (err) {
-          const status = Number((err as { status?: number })?.status) || 500;
-          const message = err instanceof Error ? err.message : "erro ia";
-          const responseStatus = status === 429 || status === 402 || status === 401 ? status : 500;
+        } catch (err: any) {
+          const status = err.status || 500;
+          const message = err.message || "Erro interno no servidor de IA.";
 
-          return Response.json({ error: message }, { status: responseStatus });
+          // Tratar Rate Limits e Quota
+          if (status === 429 || status === 402) {
+            return Response.json({ error: message }, { status });
+          }
+
+          return Response.json({ error: message }, { status: 500 });
         }
       },
     },

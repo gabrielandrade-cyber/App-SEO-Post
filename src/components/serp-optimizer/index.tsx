@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -141,6 +141,10 @@ export function SerpOptimizer() {
 
   const activeKey = getActiveKey(settings);
   const refreshRows = useCallback(() => setRefreshKey((value) => value + 1), []);
+
+  useLayoutEffect(() => {
+    rowVirtualizer.measure();
+  }, [editingCell, rowVirtualizer]);
 
   const queue = useBatchQueue({
     apiKey: activeKey,
@@ -795,16 +799,12 @@ export function SerpOptimizer() {
                                         defaultValue={row.newTitle || ""}
                                         onFocus={() => {
                                           setEditingCell({ id: row.id, field: "newTitle" });
-                                          window.setTimeout(() => rowVirtualizer.measure(), 0);
-                                          window.setTimeout(() => rowVirtualizer.measure(), 220);
                                         }}
                                         onBlur={(e) => {
                                           void handleCellEdit(row.id, "newTitle", e.target.value);
                                           setEditingCell(null);
-                                          window.setTimeout(() => rowVirtualizer.measure(), 0);
-                                          window.setTimeout(() => rowVirtualizer.measure(), 220);
                                         }}
-                                        className={`w-full resize-none overflow-y-auto rounded-md p-2 text-sm text-white/90 outline-none transition-all duration-200 ${
+                                        className={`w-full resize-none overflow-y-auto rounded-md p-2 text-sm text-white/90 outline-none transition-colors duration-200 ${
                                           isEditingTitle
                                             ? "h-28 bg-slate-900 shadow-2xl ring-1 ring-indigo-500"
                                             : "h-10 bg-transparent hover:bg-white/5"
@@ -827,8 +827,6 @@ export function SerpOptimizer() {
                                         defaultValue={row.newDescription || ""}
                                         onFocus={() => {
                                           setEditingCell({ id: row.id, field: "newDescription" });
-                                          window.setTimeout(() => rowVirtualizer.measure(), 0);
-                                          window.setTimeout(() => rowVirtualizer.measure(), 220);
                                         }}
                                         onBlur={(e) => {
                                           void handleCellEdit(
@@ -837,10 +835,8 @@ export function SerpOptimizer() {
                                             e.target.value,
                                           );
                                           setEditingCell(null);
-                                          window.setTimeout(() => rowVirtualizer.measure(), 0);
-                                          window.setTimeout(() => rowVirtualizer.measure(), 220);
                                         }}
-                                        className={`w-full resize-none overflow-y-auto rounded-md p-2 text-sm text-white/80 outline-none transition-all duration-200 ${
+                                        className={`w-full resize-none overflow-y-auto rounded-md p-2 text-sm text-white/80 outline-none transition-colors duration-200 ${
                                           isEditingDescription
                                             ? "h-40 bg-slate-900 shadow-2xl ring-1 ring-indigo-500"
                                             : "h-12 bg-transparent hover:bg-white/5"
