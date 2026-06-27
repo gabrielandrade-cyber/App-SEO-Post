@@ -17,7 +17,8 @@ function ComoUsarImagens() {
             Como usar o Image Optimizer
           </h1>
           <p className="mx-auto max-w-2xl text-lg text-white/60">
-            Aprenda a transformar as suas imagens pesadas em WebP otimizados, utilizando a Visão da Inteligência Artificial para gerar Nomes de Ficheiro e Alt Texts de alta conversão.
+            Aprenda a transformar as suas imagens pesadas em WebP otimizados, utilizando a Visão da
+            Inteligência Artificial para gerar Nomes de Ficheiro e Alt Texts de alta conversão.
           </p>
         </div>
 
@@ -30,9 +31,18 @@ function ComoUsarImagens() {
                 <UploadCloud className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white mb-2">1. Arraste as suas imagens (PNG ou JPG)</h3>
+                <h3 className="text-xl font-bold text-white mb-2">
+                  1. Arraste as suas imagens (PNG ou JPG)
+                </h3>
                 <p className="text-white/60 leading-relaxed">
-                  Na aba <b>Workspace</b>, arraste as suas imagens ou clique na área de upload. A nossa tecnologia <b>converte automaticamente e instantaneamente as imagens para WebP no seu navegador</b>. Este processo é super rápido e nenhuma imagem pesada é enviada para servidores de terceiros, garantindo máxima privacidade e velocidade.
+                  Na aba <b>Workspace</b>, arraste as suas imagens ou clique na área de upload. A
+                  nossa tecnologia{" "}
+                  <b>
+                    converte automaticamente e instantaneamente as imagens para WebP no seu
+                    navegador
+                  </b>
+                  . Este processo é super rápido e nenhuma imagem pesada é enviada para servidores
+                  de terceiros, garantindo máxima privacidade e velocidade.
                 </p>
               </div>
             </div>
@@ -46,11 +56,18 @@ function ComoUsarImagens() {
                 <ShieldCheck className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white mb-2">2. Valide as Configurações de IA</h3>
+                <h3 className="text-xl font-bold text-white mb-2">
+                  2. Valide as Configurações de IA
+                </h3>
                 <p className="text-white/60 leading-relaxed">
-                  Para utilizar a Inteligência Artificial nas imagens, certifique-se que adicionou a chave do <b>Google Gemini</b> ou <b>Groq</b> na aba de opções. 
-                  <br/><br/>
-                  <span className="text-amber-400">Nota Importante:</span> O modelo <b>Cerebras</b> (disponível no Otimizador de SERP) não possui olhos virtuais (modelos multimodais). Se tiver o Cerebras ativado, a ferramenta de Imagens irá utilizar o Gemini automaticamente por segurança.
+                  Para utilizar a Inteligência Artificial nas imagens, certifique-se que adicionou a
+                  chave do <b>Google Gemini</b> ou <b>Groq</b> na aba de opções.
+                  <br />
+                  <br />
+                  <span className="text-amber-400">Nota Importante:</span> O modelo <b>Cerebras</b>{" "}
+                  (disponível no Otimizador de SERP) não possui olhos virtuais (modelos
+                  multimodais). Se tiver o Cerebras ativado, a ferramenta de Imagens irá utilizar o
+                  Gemini automaticamente por segurança.
                 </p>
               </div>
             </div>
@@ -66,7 +83,9 @@ function ComoUsarImagens() {
                 <div>
                   <h3 className="text-xl font-bold text-white mb-2">3. Otimizar Nomes</h3>
                   <p className="text-white/60 leading-relaxed text-sm">
-                    Clique em <b>Otimizar Nome</b>. A IA vai "olhar" para a sua imagem e gerar um nome de ficheiro minúsculo, separado por hifens (ex: <i>sapato-pele-castanho.webp</i>), perfeito para os crawlers da Google.
+                    Clique em <b>Otimizar Nome</b>. A IA vai "olhar" para a sua imagem e gerar um
+                    nome de ficheiro minúsculo, separado por hifens (ex:{" "}
+                    <i>sapato-pele-castanho.webp</i>), perfeito para os crawlers da Google.
                   </p>
                 </div>
               </div>
@@ -80,7 +99,9 @@ function ComoUsarImagens() {
                 <div>
                   <h3 className="text-xl font-bold text-white mb-2">4. Gerar Alt Text</h3>
                   <p className="text-white/60 leading-relaxed text-sm">
-                    O <b>Alt Text</b> é crucial para Acessibilidade e SEO. Clique no botão e a IA criará uma descrição concisa (máximo de 120 caracteres) detalhando o conteúdo visual da imagem. Pode copiar o texto com um único clique!
+                    O <b>Alt Text</b> é crucial para Acessibilidade e SEO. Clique no botão e a IA
+                    criará uma descrição concisa (máximo de 120 caracteres) detalhando o conteúdo
+                    visual da imagem. Pode copiar o texto com um único clique!
                   </p>
                 </div>
               </div>
@@ -97,7 +118,10 @@ function ComoUsarImagens() {
               <div>
                 <h3 className="text-xl font-bold text-white mb-2">5. Exportação Global (ZIP)</h3>
                 <p className="text-white/60 leading-relaxed">
-                  Quando terminar de otimizar os nomes e os tamanhos (se quiser usar o botão Compressão Max), basta clicar no botão <b>Descarregar (ZIP)</b> no topo da lista. A aplicação irá compilar nativamente todas as imagens WebP num único pacote pronto a importar para o seu CMS (WordPress, Shopify, etc).
+                  Quando terminar de otimizar os nomes e os tamanhos (se quiser usar o botão
+                  Compressão Max), basta clicar no botão <b>Descarregar (ZIP)</b> no topo da lista.
+                  A aplicação irá compilar nativamente todas as imagens WebP num único pacote pronto
+                  a importar para o seu CMS (WordPress, Shopify, etc).
                 </p>
               </div>
             </div>

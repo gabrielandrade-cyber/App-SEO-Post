@@ -13,11 +13,7 @@
  */
 
 import Papa from "papaparse";
-import {
-  putCsvRows,
-  resetCsvData,
-  setCsvRowCount,
-} from "./db";
+import { putCsvRows, resetCsvData, setCsvRowCount } from "./db";
 import type { CsvRow } from "./store";
 
 export interface ParseResult {
@@ -174,9 +170,7 @@ export async function importCSVToIndexedDB(
 
         if (buffer.length >= FLUSH_SIZE) {
           parser.pause();
-          pendingFlush = pendingFlush
-            .then(flush)
-            .then(() => parser.resume());
+          pendingFlush = pendingFlush.then(flush).then(() => parser.resume());
         }
       },
       complete() {

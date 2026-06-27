@@ -2,16 +2,22 @@ import { createServerFn } from "@tanstack/react-start";
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 
-interface VisionPayload {
+export interface VisionPayload {
   base64Image: string; // String no formato "data:image/webp;base64,..."
   prompt: string;
   provider: "gemini" | "groq";
   apiKey: string;
 }
 
-export const optimizeVision = createServerFn({ method: "POST" })
-  .handler(async ({ data }: any) => {
-    const { base64Image, prompt, provider, apiKey } = data as VisionPayload;
+export interface VisionResponse {
+  success: boolean;
+  text: string;
+}
+
+export const optimizeVision = (createServerFn({ method: "POST" }) as any)
+  .inputValidator((data: VisionPayload) => data)
+  .handler(async ({ data }: { data: VisionPayload }): Promise<VisionResponse> => {
+    const { base64Image, prompt, provider, apiKey } = data;
 
     if (!apiKey) {
       throw new Error(`[${provider}] API Key não fornecida.`);
@@ -35,17 +41,14 @@ export const optimizeVision = createServerFn({ method: "POST" })
     try {
       if (provider === "gemini") {
         const ai = new GoogleGenAI({ apiKey });
-        
+
         const response = await ai.models.generateContent({
-          model: "gemini-2.5-flash", // Modelo multimodal de alta performance
-          contents: [
-            prompt,
-            { inlineData: { data: base64Data, mimeType } }
-          ],
+          model: "gemini-2.0-flash", // Modelo multimodal de alta performance
+          contents: [prompt, { inlineData: { data: base64Data, mimeType } }],
           config: {
             temperature: 0.1,
             maxOutputTokens: 200, // Curto para SEO
-          }
+          },
         });
 
         if (!response.text) {
@@ -53,7 +56,6 @@ export const optimizeVision = createServerFn({ method: "POST" })
         }
 
         return { success: true, text: response.text.trim() };
-
       } else if (provider === "groq") {
         const client = new OpenAI({
           apiKey: apiKey,
@@ -61,7 +63,7 @@ export const optimizeVision = createServerFn({ method: "POST" })
         });
 
         const response = await client.chat.completions.create({
-          model: "meta-llama/llama-4-scout-17b-16e-instruct",
+          model: "llama-3.2-11b-vision-preview",
           temperature: 0.1,
           max_tokens: 200,
           messages: [
@@ -94,11 +96,19 @@ export const optimizeVision = createServerFn({ method: "POST" })
       const status = (err as { status?: number })?.status;
 
       // Tratamento de erros comuns
-      if (status === 429 || message.toLowerCase().includes("quota") || message.toLowerCase().includes("rate limit")) {
-        throw new Error(`[${provider}] Limite de requisições atingido (429). Aguarde alguns instantes.`);
+      if (
+        status === 429 ||
+        message.toLowerCase().includes("quota") ||
+        message.toLowerCase().includes("rate limit")
+      ) {
+        throw new Error(
+          `[${provider}] Limite de requisições atingido (429). Aguarde alguns instantes.`,
+        );
       }
       if (status === 413 || message.includes("413")) {
-        throw new Error("A imagem é demasiado grande (413 Payload Too Large). A compressão falhou.");
+        throw new Error(
+          "A imagem é demasiado grande (413 Payload Too Large). A compressão falhou.",
+        );
       }
       if (status === 504 || message.includes("timeout")) {
         throw new Error("O servidor da IA demorou demasiado tempo a responder (504 Timeout).");

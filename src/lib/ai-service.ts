@@ -24,7 +24,7 @@ export interface AIResponse {
   retryAfter?: number;
 }
 
-interface OptimizeFieldPayload {
+export interface OptimizeFieldPayload {
   provider: AIProvider;
   apiKey: string;
   systemPrompt: string;
@@ -52,22 +52,26 @@ function cleanResponse(raw: string, field: OptimizeField): string {
   text = text.replace(/^["'`]+|["'`]+$/g, "");
 
   // If the model returned multiple lines, take only the first meaningful line
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
   if (lines.length > 1) {
-    const contentLine = lines.find((l) =>
-      !l.startsWith("*") &&
-      !l.startsWith("-") &&
-      !l.startsWith("#") &&
-      !l.toLowerCase().startsWith("aqui") &&
-      !l.toLowerCase().startsWith("segue") &&
-      !l.toLowerCase().startsWith("opção") &&
-      !l.toLowerCase().startsWith("sugest") &&
-      !l.toLowerCase().startsWith("meta title") &&
-      !l.toLowerCase().startsWith("meta description") &&
-      !l.toLowerCase().startsWith("título") &&
-      !l.toLowerCase().startsWith("description") &&
-      !l.includes("caracteres") &&
-      l.length > 20
+    const contentLine = lines.find(
+      (l) =>
+        !l.startsWith("*") &&
+        !l.startsWith("-") &&
+        !l.startsWith("#") &&
+        !l.toLowerCase().startsWith("aqui") &&
+        !l.toLowerCase().startsWith("segue") &&
+        !l.toLowerCase().startsWith("opção") &&
+        !l.toLowerCase().startsWith("sugest") &&
+        !l.toLowerCase().startsWith("meta title") &&
+        !l.toLowerCase().startsWith("meta description") &&
+        !l.toLowerCase().startsWith("título") &&
+        !l.toLowerCase().startsWith("description") &&
+        !l.includes("caracteres") &&
+        l.length > 20,
     );
     text = contentLine ?? lines[0];
   }
@@ -106,7 +110,9 @@ async function callGemini(
   const maxOutputTokens = field === "title" ? 40 : 100;
   const userMessage = `A URL alvo é: ${url}`;
 
-  const tryModel = async (model: string): Promise<{ ok: boolean; quotaZero: boolean; response: AIResponse }> => {
+  const tryModel = async (
+    model: string,
+  ): Promise<{ ok: boolean; quotaZero: boolean; response: AIResponse }> => {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     try {
@@ -125,30 +131,46 @@ async function callGemini(
         const apiMsg = body?.error?.message || `HTTP ${res.status}`;
         console.error(`[Gemini/${model}] Erro ${res.status}:`, apiMsg);
 
-        const isQuotaZero = apiMsg.includes("limit: 0") || (res.status === 429 && apiMsg.includes("quota"));
+        const isQuotaZero =
+          apiMsg.includes("limit: 0") || (res.status === 429 && apiMsg.includes("quota"));
 
         if (isQuotaZero || res.status === 404) {
-          return { ok: false, quotaZero: true, response: { text: "", error: apiMsg, success: false } };
+          return {
+            ok: false,
+            quotaZero: true,
+            response: { text: "", error: apiMsg, success: false },
+          };
         }
 
         if (res.status === 429) {
           return {
-            ok: false, quotaZero: false,
+            ok: false,
+            quotaZero: false,
             response: {
               text: "",
-              error: "[Gemini] Limite de requisições gratuitas atingido. Aguarde alguns segundos e tente novamente.",
+              error:
+                "[Gemini] Limite de requisições gratuitas atingido. Aguarde alguns segundos e tente novamente.",
               success: false,
               retryAfter: 5000,
             },
           };
         }
 
-        return { ok: false, quotaZero: false, response: { text: "", error: `[Gemini] Erro ${res.status}: ${apiMsg}`, success: false } };
+        return {
+          ok: false,
+          quotaZero: false,
+          response: { text: "", error: `[Gemini] Erro ${res.status}: ${apiMsg}`, success: false },
+        };
       }
 
       const data = await res.json();
       const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
-      if (!rawText) return { ok: false, quotaZero: false, response: { text: "", error: "[Gemini] Resposta vazia.", success: false } };
+      if (!rawText)
+        return {
+          ok: false,
+          quotaZero: false,
+          response: { text: "", error: "[Gemini] Resposta vazia.", success: false },
+        };
 
       let parsedText = "";
       let parsedJustification = "";
@@ -166,10 +188,25 @@ async function callGemini(
       console.log(`[Gemini/${model}] ✓ ${text.length} chars`);
 
       geminiWorkingModel = model;
-      return { ok: true, quotaZero: false, response: { text, justification: parsedJustification, success: true } };
+      return {
+        ok: true,
+        quotaZero: false,
+        response: { text, justification: parsedJustification, success: true },
+      };
     } catch (err) {
-      console.error(`[Gemini/${model}] Erro de rede:`, err instanceof Error ? err.message : "desconhecido");
-      return { ok: false, quotaZero: false, response: { text: "", error: `[Gemini] Erro de rede: ${err instanceof Error ? err.message : "desconhecido"}`, success: false } };
+      console.error(
+        `[Gemini/${model}] Erro de rede:`,
+        err instanceof Error ? err.message : "desconhecido",
+      );
+      return {
+        ok: false,
+        quotaZero: false,
+        response: {
+          text: "",
+          error: `[Gemini] Erro de rede: ${err instanceof Error ? err.message : "desconhecido"}`,
+          success: false,
+        },
+      };
     }
   };
 
@@ -187,14 +224,28 @@ async function callGemini(
     for (const model of GEMINI_MODELS) {
       const result = await tryModel(model);
       if (result.ok) return result.response;
-      if (result.quotaZero) { tried.push(model); continue; }
+      if (result.quotaZero) {
+        tried.push(model);
+        continue;
+      }
       return result.response;
     }
 
-    return { text: "", error: `[Gemini] Nenhum modelo disponível. Testados: ${tried.join(", ")}. Troque para Groq, Cerebras ou OpenRouter.`, success: false };
+    return {
+      text: "",
+      error: `[Gemini] Nenhum modelo disponível. Testados: ${tried.join(", ")}. Troque para Groq, Cerebras ou OpenRouter.`,
+      success: false,
+    };
   } catch (err) {
-    console.error("[Gemini] Erro inesperado:", err instanceof Error ? err.message : "Erro inesperado");
-    return { text: "", error: `[Gemini] ${err instanceof Error ? err.message : "Erro inesperado"}`, success: false };
+    console.error(
+      "[Gemini] Erro inesperado:",
+      err instanceof Error ? err.message : "Erro inesperado",
+    );
+    return {
+      text: "",
+      error: `[Gemini] ${err instanceof Error ? err.message : "Erro inesperado"}`,
+      success: false,
+    };
   }
 }
 
@@ -286,7 +337,11 @@ async function callOpenAIProvider(
 
     // ── Specific error handling ──
     if (status === 401) {
-      return { text: "", error: `[${config.label}] API Key inválida. Verifique se copiou corretamente.`, success: false };
+      return {
+        text: "",
+        error: `[${config.label}] API Key inválida. Verifique se copiou corretamente.`,
+        success: false,
+      };
     }
     if (status === 429) {
       return {
@@ -297,10 +352,18 @@ async function callOpenAIProvider(
       };
     }
     if (status === 400) {
-      return { text: "", error: `[${config.label}] Requisição inválida (400): ${message}`, success: false };
+      return {
+        text: "",
+        error: `[${config.label}] Requisição inválida (400): ${message}`,
+        success: false,
+      };
     }
     if (status === 402) {
-      return { text: "", error: `[${config.label}] Créditos insuficientes. Verifique sua conta.`, success: false };
+      return {
+        text: "",
+        error: `[${config.label}] Créditos insuficientes. Verifique sua conta.`,
+        success: false,
+      };
     }
 
     return { text: "", error: `[${config.label}] ${message}`, success: false };
@@ -309,9 +372,10 @@ async function callOpenAIProvider(
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
-export const optimizeField = createServerFn({ method: "POST" })
-  .handler(async ({ data }: any): Promise<AIResponse> => {
-    const { provider, apiKey, systemPrompt, targetUrl, field } = data as OptimizeFieldPayload;
+export const optimizeField = (createServerFn({ method: "POST" }) as any)
+  .inputValidator((data: OptimizeFieldPayload) => data)
+  .handler(async ({ data }: { data: OptimizeFieldPayload }): Promise<AIResponse> => {
+    const { provider, apiKey, systemPrompt, targetUrl, field } = data;
     try {
       if (!apiKey?.trim()) {
         return { text: "", error: `[${provider}] API Key nao fornecida.`, success: false };
@@ -321,7 +385,7 @@ export const optimizeField = createServerFn({ method: "POST" })
         return await callGemini(apiKey, systemPrompt, targetUrl, field);
       }
 
-    // Groq, Cerebras → all use OpenAI SDK
+      // Groq, Cerebras → all use OpenAI SDK
       return await callOpenAIProvider(
         provider as OpenAIProviderKey,
         apiKey,
@@ -330,13 +394,16 @@ export const optimizeField = createServerFn({ method: "POST" })
         field,
       );
     } catch (err) {
-    // Ultimate safety net — never let the function crash
-    console.error(`[optimizeField] Erro fatal não capturado (provider: ${provider}):`, err instanceof Error ? err.message : "desconhecido");
-    return {
-      text: "",
-      error: `Erro inesperado ao chamar ${provider}. Verifique os logs do servidor.`,
-      success: false,
-      retryAfter: 3000,
-    };
-  }
-});
+      // Ultimate safety net — never let the function crash
+      console.error(
+        `[optimizeField] Erro fatal não capturado (provider: ${provider}):`,
+        err instanceof Error ? err.message : "desconhecido",
+      );
+      return {
+        text: "",
+        error: `Erro inesperado ao chamar ${provider}. Verifique os logs do servidor.`,
+        success: false,
+        retryAfter: 3000,
+      };
+    }
+  });

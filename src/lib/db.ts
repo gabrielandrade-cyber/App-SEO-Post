@@ -200,7 +200,9 @@ export async function updateCsvRows(
       ...current,
       ...update,
       optimizedTitle: Boolean(update.newTitle ?? current.newTitle ?? current.optimizedTitle),
-      optimizedDesc: Boolean(update.newDescription ?? current.newDescription ?? current.optimizedDesc),
+      optimizedDesc: Boolean(
+        update.newDescription ?? current.newDescription ?? current.optimizedDesc,
+      ),
       loadingTitle: false,
       loadingDesc: false,
     };
