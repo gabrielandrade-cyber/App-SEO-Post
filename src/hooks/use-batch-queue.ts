@@ -11,6 +11,8 @@ import type { CsvRow } from "@/lib/store";
 
 const DEFAULT_BATCH_SIZE = 20;
 const BATCH_DELAY_MS = 1000;
+const FREE_TIER_BATCH_DELAY_MS = 2500;
+const CEREBRAS_BATCH_DELAY_MS = 6500;
 
 interface BatchResponse {
   resultados?: Array<Partial<CsvRow> & Pick<CsvRow, "id">>;
@@ -37,6 +39,17 @@ function toPayloadRow(row: CsvRow) {
     title: row.title,
     description: row.description,
   };
+}
+
+function getProviderBatchSize(provider: string, batchSize: number): number {
+  if (provider === "openai") return batchSize;
+  if (provider === "cerebras") return 1;
+  return Math.min(batchSize, 6);
+}
+
+function getProviderBatchDelay(provider: string): number {
+  if (provider === "cerebras") return CEREBRAS_BATCH_DELAY_MS;
+  return provider === "openai" ? BATCH_DELAY_MS : FREE_TIER_BATCH_DELAY_MS;
 }
 
 export function useBatchQueue({
@@ -97,7 +110,8 @@ export function useBatchQueue({
           return;
         }
 
-        const batch = await getBatchRows(currentIndex, batchSize);
+        const effectiveBatchSize = getProviderBatchSize(provider, batchSize);
+        const batch = await getBatchRows(currentIndex, effectiveBatchSize);
         if (batch.length === 0) break;
 
         const response = await fetch("/api/optimize-batch", {
@@ -127,13 +141,18 @@ export function useBatchQueue({
           throw new Error(data.error || `Erro HTTP ${response.status}`);
         }
 
-        await updateCsvRows(data.resultados ?? []);
+        const resultados = data.resultados ?? [];
+        await updateCsvRows(resultados);
         currentIndex += batch.length;
         queue = await setQueueState({ status: "running", currentIndex });
         setProcessed(queue.currentIndex);
+        const rowErrors = resultados.filter((row) => row.optimizationError).length;
+        if (rowErrors > 0) {
+          setLastError(`${rowErrors} linha(s) ficaram com erro apos as novas tentativas.`);
+        }
         onRowsChanged?.();
 
-        await sleep(BATCH_DELAY_MS);
+        await sleep(getProviderBatchDelay(provider));
       }
 
       await setQueueState({ status: "done", currentIndex: meta.rowCount });
