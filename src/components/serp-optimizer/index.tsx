@@ -36,12 +36,7 @@ import {
 } from "@/lib/db";
 import { importCSVToIndexedDB } from "@/lib/csv-parser";
 import { getActiveKey, useSettings, type AIProvider, type CsvRow } from "@/lib/store";
-import {
-  SERP_GRID_TEMPLATE,
-  PROVIDER_LABELS,
-  sanitizeCsvFileName,
-  buildControlCsv,
-} from "./utils";
+import { SERP_GRID_TEMPLATE, PROVIDER_LABELS, sanitizeCsvFileName, buildControlCsv } from "./utils";
 
 const AI_PROVIDER_OPTIONS: Array<{
   id: AIProvider;
@@ -796,15 +791,13 @@ export function SerpOptimizer() {
                                         onFocus={() => {
                                           setEditingCell({ id: row.id, field: "newTitle" });
                                           window.setTimeout(() => rowVirtualizer.measure(), 0);
-                                          window.setTimeout(() => rowVirtualizer.measure(), 220);
                                         }}
                                         onBlur={(e) => {
                                           void handleCellEdit(row.id, "newTitle", e.target.value);
                                           setEditingCell(null);
                                           window.setTimeout(() => rowVirtualizer.measure(), 0);
-                                          window.setTimeout(() => rowVirtualizer.measure(), 220);
                                         }}
-                                        className={`w-full resize-none overflow-y-auto rounded-md p-2 text-sm text-white/90 outline-none transition-all duration-200 ${
+                                        className={`w-full resize-none overflow-y-auto rounded-md p-2 text-sm text-white/90 outline-none transition-colors duration-200 ${
                                           isEditingTitle
                                             ? "h-28 bg-slate-900 shadow-2xl ring-1 ring-indigo-500"
                                             : "h-10 bg-transparent hover:bg-white/5"
