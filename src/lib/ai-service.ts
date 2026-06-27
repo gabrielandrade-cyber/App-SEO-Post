@@ -1,15 +1,3 @@
-/**
- * AI Service — Multi-provider SEO optimization engine.
- *
- * Providers:
- *   • Google Gemini  → REST API (generativelanguage.googleapis.com) with model fallback
- *   • Groq           → OpenAI SDK (baseURL: api.groq.com)
- *   • Cerebras       → OpenAI SDK (baseURL: api.cerebras.ai)
- *
- * All OpenAI-compatible providers use `import OpenAI from "openai"` with
- * custom baseURL. System prompts are ALWAYS sent with role: "system".
- */
-
 import { createServerFn } from "@tanstack/react-start";
 import OpenAI from "openai";
 import type { AIProvider } from "./store";
@@ -24,6 +12,14 @@ export interface AIResponse {
   retryAfter?: number;
 }
 
+export interface BatchResult {
+  id: number;
+  newTitle: string;
+  newDescription: string;
+  titleJustification: string;
+  descriptionJustification: string;
+}
+
 export interface OptimizeFieldPayload {
   provider: AIProvider;
   apiKey: string;
@@ -32,341 +28,215 @@ export interface OptimizeFieldPayload {
   field: OptimizeField;
 }
 
+export interface BatchItem {
+  id: number;
+  url: string;
+  title_atual: string;
+  desc_atual: string;
+  conteudo_extraido: string;
+}
+
+export interface OptimizeBatchPayloadInternal {
+  apiKey: string;
+  systemPrompt: string;
+  batch: BatchItem[];
+  provider: AIProvider;
+}
+
+// ─── Utilities ───────────────────────────────────────────────────────────────
+
 export function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Delay between bulk requests (ms). */
-export const BULK_DELAY_MS = 2000;
-
-// ─── Response cleanup ────────────────────────────────────────────────────────
-
-/**
- * Cleans up AI responses that may contain extra text, quotes, or explanations.
- * Extracts only the core SEO text.
- */
-function cleanResponse(raw: string, field: OptimizeField): string {
-  let text = raw.trim();
-
-  // Remove wrapping quotes (single, double, or backtick)
-  text = text.replace(/^["'`]+|["'`]+$/g, "");
-
-  // If the model returned multiple lines, take only the first meaningful line
-  const lines = text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-  if (lines.length > 1) {
-    const contentLine = lines.find(
-      (l) =>
-        !l.startsWith("*") &&
-        !l.startsWith("-") &&
-        !l.startsWith("#") &&
-        !l.toLowerCase().startsWith("aqui") &&
-        !l.toLowerCase().startsWith("segue") &&
-        !l.toLowerCase().startsWith("opção") &&
-        !l.toLowerCase().startsWith("sugest") &&
-        !l.toLowerCase().startsWith("meta title") &&
-        !l.toLowerCase().startsWith("meta description") &&
-        !l.toLowerCase().startsWith("título") &&
-        !l.toLowerCase().startsWith("description") &&
-        !l.includes("caracteres") &&
-        l.length > 20,
-    );
-    text = contentLine ?? lines[0];
-  }
-
-  // Remove any remaining wrapping quotes after line extraction
-  text = text.replace(/^["'`]+|["'`]+$/g, "");
-
-  // Enforce character limits — hard truncate if model was too verbose
-  const maxChars = field === "title" ? 65 : 160;
-  if (text.length > maxChars) {
-    const truncated = text.substring(0, maxChars);
-    const lastSpace = truncated.lastIndexOf(" ");
-    text = lastSpace > maxChars * 0.7 ? truncated.substring(0, lastSpace) : truncated;
-  }
-
-  return text.trim();
+function cleanMarkdown(text: string): string {
+  return text.replace(/```json\n?|```/g, "").trim();
 }
 
-// ─── Google Gemini (REST API with model fallback) ───────────────────────────
+function parseJSONSafely(text: string): any {
+  const cleaned = cleanMarkdown(text);
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    // Try to find JSON block
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch {
+        throw new Error("Falha ao processar resposta JSON da IA.");
+      }
+    }
+    throw new Error("A IA não retornou um formato JSON válido.");
+  }
+}
 
-const GEMINI_MODELS = [
-  "gemini-2.5-flash-lite",
-  "gemini-2.0-flash",
-  "gemini-1.5-flash",
-  "gemini-1.5-flash-8b",
-];
+// ─── Adapters ────────────────────────────────────────────────────────────────
 
-let geminiWorkingModel: string | null = null;
+interface AIAdapter {
+  optimizeField(payload: OptimizeFieldPayload): Promise<AIResponse>;
+  optimizeBatch(payload: OptimizeBatchPayloadInternal): Promise<BatchResult[]>;
+}
 
-async function callGemini(
-  apiKey: string,
-  systemPrompt: string,
-  url: string,
-  field: OptimizeField,
-): Promise<AIResponse> {
-  const maxOutputTokens = field === "title" ? 40 : 100;
-  const userMessage = `A URL alvo é: ${url}`;
+class OpenAIAdapter implements AIAdapter {
+  private client: OpenAI;
+  private model: string;
 
-  const tryModel = async (
-    model: string,
-  ): Promise<{ ok: boolean; quotaZero: boolean; response: AIResponse }> => {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  constructor(apiKey: string, baseURL?: string, model: string = "gpt-4o-mini") {
+    this.client = new OpenAI({ apiKey, baseURL, dangerouslyAllowBrowser: false });
+    this.model = model;
+  }
 
+  async optimizeField(payload: OptimizeFieldPayload): Promise<AIResponse> {
     try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ parts: [{ text: userMessage }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens },
-        }),
+      const completion = await this.client.chat.completions.create({
+        model: this.model,
+        temperature: 0.3,
+        messages: [
+          { role: "system", content: payload.systemPrompt },
+          { role: "user", content: `URL: ${payload.targetUrl}` },
+        ],
+        response_format: { type: "json_object" },
       });
 
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        const apiMsg = body?.error?.message || `HTTP ${res.status}`;
-        console.error(`[Gemini/${model}] Erro ${res.status}:`, apiMsg);
-
-        const isQuotaZero =
-          apiMsg.includes("limit: 0") || (res.status === 429 && apiMsg.includes("quota"));
-
-        if (isQuotaZero || res.status === 404) {
-          return {
-            ok: false,
-            quotaZero: true,
-            response: { text: "", error: apiMsg, success: false },
-          };
-        }
-
-        if (res.status === 429) {
-          return {
-            ok: false,
-            quotaZero: false,
-            response: {
-              text: "",
-              error:
-                "[Gemini] Limite de requisições gratuitas atingido. Aguarde alguns segundos e tente novamente.",
-              success: false,
-              retryAfter: 5000,
-            },
-          };
-        }
-
-        return {
-          ok: false,
-          quotaZero: false,
-          response: { text: "", error: `[Gemini] Erro ${res.status}: ${apiMsg}`, success: false },
-        };
-      }
-
-      const data = await res.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? "";
-      if (!rawText)
-        return {
-          ok: false,
-          quotaZero: false,
-          response: { text: "", error: "[Gemini] Resposta vazia.", success: false },
-        };
-
-      let parsedText = "";
-      let parsedJustification = "";
-      try {
-        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-        const jsonString = jsonMatch ? jsonMatch[0] : rawText;
-        const parsed = JSON.parse(jsonString);
-        parsedText = parsed.text || parsed.title || parsed.description || "";
-        parsedJustification = parsed.justification || parsed.motivo || "";
-      } catch {
-        parsedText = rawText;
-      }
-
-      const text = cleanResponse(parsedText, field);
-      console.log(`[Gemini/${model}] ✓ ${text.length} chars`);
-
-      geminiWorkingModel = model;
+      const content = completion.choices[0]?.message?.content || "{}";
+      const parsed = parseJSONSafely(content);
       return {
-        ok: true,
-        quotaZero: false,
-        response: { text, justification: parsedJustification, success: true },
+        text: parsed.text || parsed.title || parsed.description || "",
+        justification: parsed.justification || "",
+        success: true,
       };
-    } catch (err) {
-      console.error(
-        `[Gemini/${model}] Erro de rede:`,
-        err instanceof Error ? err.message : "desconhecido",
-      );
-      return {
-        ok: false,
-        quotaZero: false,
-        response: {
-          text: "",
-          error: `[Gemini] Erro de rede: ${err instanceof Error ? err.message : "desconhecido"}`,
-          success: false,
-        },
-      };
+    } catch (err: any) {
+      return this.handleError(err);
     }
-  };
-
-  try {
-    // Try cached model first
-    if (geminiWorkingModel) {
-      const result = await tryModel(geminiWorkingModel);
-      if (result.ok) return result.response;
-      if (!result.quotaZero) return result.response;
-      geminiWorkingModel = null;
-    }
-
-    // Fallback chain
-    const tried: string[] = [];
-    for (const model of GEMINI_MODELS) {
-      const result = await tryModel(model);
-      if (result.ok) return result.response;
-      if (result.quotaZero) {
-        tried.push(model);
-        continue;
-      }
-      return result.response;
-    }
-
-    return {
-      text: "",
-      error: `[Gemini] Nenhum modelo disponível. Testados: ${tried.join(", ")}. Troque para Groq, Cerebras ou OpenRouter.`,
-      success: false,
-    };
-  } catch (err) {
-    console.error(
-      "[Gemini] Erro inesperado:",
-      err instanceof Error ? err.message : "Erro inesperado",
-    );
-    return {
-      text: "",
-      error: `[Gemini] ${err instanceof Error ? err.message : "Erro inesperado"}`,
-      success: false,
-    };
   }
-}
 
-// ─── OpenAI-compatible providers (Groq, Cerebras) ───────────────
-
-const OPENAI_PROVIDERS = {
-  openai: {
-    baseURL: undefined,
-    model: "gpt-4o-mini",
-    label: "ChatGPT",
-  },
-  groq: {
-    baseURL: "https://api.groq.com/openai/v1",
-    model: "llama-3.3-70b-versatile",
-    label: "Groq",
-  },
-  cerebras: {
-    baseURL: "https://api.cerebras.ai/v1",
-    model: "llama3.1-8b",
-    label: "Cerebras",
-  },
-} as const;
-
-type OpenAIProviderKey = keyof typeof OPENAI_PROVIDERS;
-
-/**
- * Creates an OpenAI client configured for the given provider.
- * Uses the official OpenAI API for ChatGPT and custom baseURL for compatible providers.
- */
-function createClient(provider: OpenAIProviderKey, apiKey: string): OpenAI {
-  const config = OPENAI_PROVIDERS[provider];
-  return new OpenAI({
-    apiKey,
-    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
-  });
-}
-
-async function callOpenAIProvider(
-  provider: OpenAIProviderKey,
-  apiKey: string,
-  systemPrompt: string,
-  url: string,
-  field: OptimizeField,
-): Promise<AIResponse> {
-  const config = OPENAI_PROVIDERS[provider];
-  const maxTokens = field === "title" ? 40 : 100;
-
-  try {
-    console.log(`[${config.label}] Chamando modelo ${config.model}...`);
-
-    const client = createClient(provider, apiKey);
-
-    const completion = await client.chat.completions.create({
-      model: config.model,
-      temperature: 0.1,
-      max_tokens: maxTokens,
+  async optimizeBatch(payload: OptimizeBatchPayloadInternal): Promise<BatchResult[]> {
+    const completion = await this.client.chat.completions.create({
+      model: this.model,
+      temperature: 0.3,
       messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: `A URL alvo é: ${url}` },
+        { role: "system", content: payload.systemPrompt },
+        { role: "user", content: JSON.stringify({ batch: payload.batch }) },
       ],
+      response_format: { type: "json_object" },
     });
 
-    const rawText = completion.choices?.[0]?.message?.content?.trim() ?? "";
-    if (!rawText) {
-      console.error(`[${config.label}] Resposta vazia.`);
-      return { text: "", error: `[${config.label}] Resposta vazia.`, success: false };
-    }
+    const content = completion.choices[0]?.message?.content || "{}";
+    const parsed = parseJSONSafely(content);
+    return parsed.resultados || [];
+  }
 
-    let parsedText = "";
-    let parsedJustification = "";
-    try {
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      const jsonString = jsonMatch ? jsonMatch[0] : rawText;
-      const parsed = JSON.parse(jsonString);
-      parsedText = parsed.text || parsed.title || parsed.description || "";
-      parsedJustification = parsed.justification || parsed.motivo || "";
-    } catch {
-      parsedText = rawText;
-    }
-
-    const text = cleanResponse(parsedText, field);
-    console.log(`[${config.label}] ✓ ${text.length} chars`);
-    return { text, justification: parsedJustification, success: true };
-  } catch (err: unknown) {
-    // Extract status and message from OpenAI SDK errors
-    const status = (err as { status?: number })?.status;
-    const message = err instanceof Error ? err.message : "Erro desconhecido";
-    console.error(`[${config.label}] Erro${status ? ` ${status}` : ""}:`, message);
-
-    // ── Specific error handling ──
-    if (status === 401) {
-      return {
-        text: "",
-        error: `[${config.label}] API Key inválida. Verifique se copiou corretamente.`,
-        success: false,
-      };
-    }
+  private handleError(err: any): AIResponse {
+    const status = err.status || 500;
     if (status === 429) {
       return {
         text: "",
-        error: `[${config.label}] Limite de requisições gratuitas atingido. Aguarde alguns segundos e tente novamente.`,
+        error: "Limite de taxa atingido (429). Por favor, aguarde.",
         success: false,
         retryAfter: 5000,
       };
     }
-    if (status === 400) {
-      return {
-        text: "",
-        error: `[${config.label}] Requisição inválida (400): ${message}`,
-        success: false,
-      };
-    }
-    if (status === 402) {
-      return {
-        text: "",
-        error: `[${config.label}] Créditos insuficientes. Verifique sua conta.`,
-        success: false,
-      };
-    }
+    return { text: "", error: err.message || "Erro na API", success: false };
+  }
+}
 
-    return { text: "", error: `[${config.label}] ${message}`, success: false };
+class GeminiAdapter implements AIAdapter {
+  private apiKey: string;
+  private model: string = "gemini-2.0-flash";
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey;
+  }
+
+  async optimizeField(payload: OptimizeFieldPayload): Promise<AIResponse> {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: payload.systemPrompt }] },
+          contents: [{ parts: [{ text: `URL: ${payload.targetUrl}` }] }],
+          generationConfig: {
+            temperature: 0.3,
+            responseMimeType: "application/json",
+          },
+        }),
+      });
+
+      if (!res.ok) throw await this.createError(res);
+
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      const parsed = parseJSONSafely(text);
+      return {
+        text: parsed.text || parsed.title || parsed.description || "",
+        justification: parsed.justification || "",
+        success: true,
+      };
+    } catch (err: any) {
+      return this.handleError(err);
+    }
+  }
+
+  async optimizeBatch(payload: OptimizeBatchPayloadInternal): Promise<BatchResult[]> {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: payload.systemPrompt }] },
+        contents: [{ parts: [{ text: JSON.stringify({ batch: payload.batch }) }] }],
+        generationConfig: {
+          temperature: 0.3,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+
+    if (!res.ok) throw await this.createError(res);
+
+    const data = await res.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+    const parsed = parseJSONSafely(text);
+    return parsed.resultados || [];
+  }
+
+  private async createError(res: Response) {
+    const body = await res.json().catch(() => ({}));
+    const message = body.error?.message || `HTTP ${res.status}`;
+    const err = new Error(message) as any;
+    err.status = res.status;
+    return err;
+  }
+
+  private handleError(err: any): AIResponse {
+    if (err.status === 429) {
+      return {
+        text: "",
+        error: "Gemini: Limite de cota atingido. Aguarde alguns instantes.",
+        success: false,
+        retryAfter: 5000,
+      };
+    }
+    return { text: "", error: `Gemini: ${err.message}`, success: false };
+  }
+}
+
+// ─── Factory ─────────────────────────────────────────────────────────────────
+
+export function getAdapter(provider: AIProvider, apiKey: string): AIAdapter {
+  switch (provider) {
+    case "gemini":
+      return new GeminiAdapter(apiKey);
+    case "groq":
+      return new OpenAIAdapter(apiKey, "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile");
+    case "cerebras":
+      return new OpenAIAdapter(apiKey, "https://api.cerebras.ai/v1", "llama3.1-8b");
+    case "openai":
+    default:
+      return new OpenAIAdapter(apiKey, undefined, "gpt-4o-mini");
   }
 }
 
@@ -375,35 +245,11 @@ async function callOpenAIProvider(
 export const optimizeField = (createServerFn({ method: "POST" }) as any)
   .inputValidator((data: OptimizeFieldPayload) => data)
   .handler(async ({ data }: { data: OptimizeFieldPayload }): Promise<AIResponse> => {
-    const { provider, apiKey, systemPrompt, targetUrl, field } = data;
-    try {
-      if (!apiKey?.trim()) {
-        return { text: "", error: `[${provider}] API Key nao fornecida.`, success: false };
-      }
-
-      if (provider === "gemini") {
-        return await callGemini(apiKey, systemPrompt, targetUrl, field);
-      }
-
-      // Groq, Cerebras → all use OpenAI SDK
-      return await callOpenAIProvider(
-        provider as OpenAIProviderKey,
-        apiKey,
-        systemPrompt,
-        targetUrl,
-        field,
-      );
-    } catch (err) {
-      // Ultimate safety net — never let the function crash
-      console.error(
-        `[optimizeField] Erro fatal não capturado (provider: ${provider}):`,
-        err instanceof Error ? err.message : "desconhecido",
-      );
-      return {
-        text: "",
-        error: `Erro inesperado ao chamar ${provider}. Verifique os logs do servidor.`,
-        success: false,
-        retryAfter: 3000,
-      };
+    const { provider, apiKey } = data;
+    if (!apiKey?.trim()) {
+      return { text: "", error: "API Key não fornecida.", success: false };
     }
+
+    const adapter = getAdapter(provider, apiKey);
+    return adapter.optimizeField(data);
   });
