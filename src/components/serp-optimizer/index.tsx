@@ -77,14 +77,103 @@ function GlassCard({
   );
 }
 
-function CharCount({ value, max }: { value: string; max: number }) {
+function CharCount({
+  value,
+  idealMin,
+  idealMax,
+}: {
+  value: string;
+  idealMin: number;
+  idealMax: number;
+}) {
   const len = value.length;
-  const ratio = len / max;
-  const color = ratio > 1 ? "text-rose-400" : ratio > 0.9 ? "text-amber-400" : "text-emerald-400";
+  const nearMin = Math.max(0, idealMin - 10);
+  const color =
+    len > idealMax
+      ? "text-rose-400"
+      : len >= idealMin
+        ? "text-emerald-400"
+        : len >= nearMin
+          ? "text-amber-400"
+          : "text-white/45";
+
   return (
     <span className={`mt-1 block text-right font-mono text-[10px] ${color}`}>
-      {len}/{max}
+      {len} / {idealMin}-{idealMax}
     </span>
+  );
+}
+
+function EditableMetaCell({
+  value,
+  placeholder,
+  isEditing,
+  minHeight,
+  idealMin,
+  idealMax,
+  onFocus,
+  onCommit,
+  onMeasure,
+}: {
+  value: string;
+  placeholder: string;
+  isEditing: boolean;
+  minHeight: number;
+  idealMin: number;
+  idealMax: number;
+  onFocus: () => void;
+  onCommit: (value: string) => void;
+  onMeasure: () => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const onMeasureRef = useRef(onMeasure);
+
+  useEffect(() => {
+    onMeasureRef.current = onMeasure;
+  }, [onMeasure]);
+
+  const resize = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = `${minHeight}px`;
+    const nextHeight = Math.max(minHeight, Math.min(textarea.scrollHeight, 220));
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > 220 ? "auto" : "hidden";
+    window.requestAnimationFrame(() => onMeasureRef.current());
+  }, [minHeight]);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  useLayoutEffect(() => {
+    resize();
+  }, [draft, isEditing, resize]);
+
+  return (
+    <div className="min-w-0">
+      <textarea
+        ref={textareaRef}
+        value={draft}
+        onFocus={onFocus}
+        onChange={(event) => {
+          setDraft(event.target.value);
+        }}
+        onBlur={() => {
+          onCommit(draft);
+        }}
+        className={`w-full resize-none rounded-md p-2 text-sm leading-relaxed outline-none transition-colors duration-200 ${
+          isEditing
+            ? "bg-slate-900/95 text-white shadow-2xl ring-1 ring-indigo-400/70"
+            : "bg-white/[0.025] text-white/85 hover:bg-white/5"
+        }`}
+        placeholder={placeholder}
+        style={{ minHeight }}
+      />
+      <CharCount value={draft} idealMin={idealMin} idealMax={idealMax} />
+    </div>
   );
 }
 
@@ -137,10 +226,6 @@ export function SerpOptimizer() {
   const activeKey = getActiveKey(settings);
   const refreshRows = useCallback(() => setRefreshKey((value) => value + 1), []);
 
-  useLayoutEffect(() => {
-    rowVirtualizer.measure();
-  }, [editingCell, rowVirtualizer]);
-
   const queue = useBatchQueue({
     apiKey: activeKey,
     provider: settings.provider,
@@ -156,13 +241,38 @@ export function SerpOptimizer() {
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => tableScrollRef.current,
-    estimateSize: () => 92,
+    estimateSize: () => 118,
     overscan: 12,
   });
+
+  const measureRow = useCallback(
+    (index: number) => {
+      window.requestAnimationFrame(() => {
+        const rowElement = tableScrollRef.current?.querySelector<HTMLElement>(
+          `[data-index="${index}"]`,
+        );
+        if (rowElement) rowVirtualizer.measureElement(rowElement);
+      });
+    },
+    [rowVirtualizer],
+  );
 
   const virtualRows = rowVirtualizer.getVirtualItems();
   const firstVirtualIndex = virtualRows[0]?.index ?? 0;
   const lastVirtualIndex = virtualRows[virtualRows.length - 1]?.index ?? -1;
+
+  useLayoutEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      for (const virtualRow of rowVirtualizer.getVirtualItems()) {
+        const rowElement = tableScrollRef.current?.querySelector<HTMLElement>(
+          `[data-index="${virtualRow.index}"]`,
+        );
+        if (rowElement) rowVirtualizer.measureElement(rowElement);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [editingCell, rowCache, rowVirtualizer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -575,6 +685,7 @@ export function SerpOptimizer() {
                 </div>
               )}
             </div>
+
           </GlassCard>
         </aside>
 
@@ -762,7 +873,7 @@ export function SerpOptimizer() {
                               key={virtualRow.key}
                               data-index={virtualRow.index}
                               ref={rowVirtualizer.measureElement}
-                              className={`absolute left-0 top-0 grid w-full border-t border-white/5 transition-colors duration-200 ${
+                              className={`absolute left-0 top-0 grid min-h-[118px] w-full items-start border-t border-white/5 transition-colors duration-200 ${
                                 isEditingRow
                                   ? "z-20 bg-slate-950/90 shadow-2xl"
                                   : `z-0 hover:bg-white/[0.03] ${
@@ -785,64 +896,72 @@ export function SerpOptimizer() {
                                     <p className="line-clamp-2 text-xs text-white/70">
                                       {row.title}
                                     </p>
-                                    <CharCount value={row.title} max={60} />
+                                    <CharCount value={row.title} idealMin={50} idealMax={60} />
                                   </div>
                                   <div className="min-w-0 px-4 py-3">
                                     <div className="relative min-h-10 w-full">
-                                      <textarea
-                                        key={`title-${row.id}-${row.newTitle ?? ""}`}
-                                        defaultValue={row.newTitle || ""}
+                                      <EditableMetaCell
+                                        value={row.newTitle ?? ""}
+                                        isEditing={isEditingTitle}
+                                        minHeight={40}
+                                        idealMin={50}
+                                        idealMax={60}
                                         onFocus={() => {
                                           setEditingCell({ id: row.id, field: "newTitle" });
                                         }}
-                                        onBlur={(e) => {
-                                          void handleCellEdit(row.id, "newTitle", e.target.value);
+                                        onCommit={(value) => {
+                                          void handleCellEdit(row.id, "newTitle", value);
                                           setEditingCell(null);
                                         }}
-                                        className={`w-full resize-none overflow-y-auto rounded-md p-2 text-sm text-white/90 outline-none transition-colors duration-200 ${
-                                          isEditingTitle
-                                            ? "h-28 bg-slate-900 shadow-2xl ring-1 ring-indigo-500"
-                                            : "h-10 bg-transparent hover:bg-white/5"
-                                        }`}
+                                        onMeasure={() => measureRow(virtualRow.index)}
                                         placeholder="O título gerado aparecerá aqui..."
                                       />
                                     </div>
-                                    <CharCount value={row.newTitle ?? ""} max={60} />
                                   </div>
                                   <div className="min-w-0 px-4 py-3">
                                     <p className="line-clamp-2 text-xs text-white/70">
                                       {row.description}
                                     </p>
-                                    <CharCount value={row.description} max={155} />
+                                    <CharCount
+                                      value={row.description}
+                                      idealMin={150}
+                                      idealMax={160}
+                                    />
                                   </div>
                                   <div className="min-w-0 px-4 py-3">
                                     <div className="relative min-h-12 w-full">
-                                      <textarea
-                                        key={`description-${row.id}-${row.newDescription ?? ""}`}
-                                        defaultValue={row.newDescription || ""}
+                                      <EditableMetaCell
+                                        value={row.newDescription ?? ""}
+                                        isEditing={isEditingDescription}
+                                        minHeight={48}
+                                        idealMin={150}
+                                        idealMax={160}
+                                        onMeasure={() => measureRow(virtualRow.index)}
                                         onFocus={() => {
                                           setEditingCell({ id: row.id, field: "newDescription" });
                                         }}
-                                        onBlur={(e) => {
+                                        onCommit={(value) => {
                                           void handleCellEdit(
                                             row.id,
                                             "newDescription",
-                                            e.target.value,
+                                            value,
                                           );
                                           setEditingCell(null);
                                         }}
-                                        className={`w-full resize-none overflow-y-auto rounded-md p-2 text-sm text-white/80 outline-none transition-colors duration-200 ${
-                                          isEditingDescription
-                                            ? "h-40 bg-slate-900 shadow-2xl ring-1 ring-indigo-500"
-                                            : "h-12 bg-transparent hover:bg-white/5"
-                                        }`}
                                         placeholder="A descrição gerada aparecerá aqui..."
                                       />
                                     </div>
-                                    <CharCount value={row.newDescription ?? ""} max={155} />
                                   </div>
                                   <div className="px-4 py-3">
                                     <div className="flex justify-end gap-1.5">
+                                      {row.optimizationError && (
+                                        <span
+                                          title={row.optimizationError}
+                                          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-amber-300/25 bg-amber-400/10"
+                                        >
+                                          <AlertTriangle className="h-3 w-3 text-amber-300" />
+                                        </span>
+                                      )}
                                       <button
                                         disabled={
                                           optimizingRowId === row.id || queue.status === "running"

@@ -203,6 +203,9 @@ export async function updateCsvRows(
       optimizedDesc: Boolean(
         update.newDescription ?? current.newDescription ?? current.optimizedDesc,
       ),
+      optimizationError:
+        update.optimizationError ??
+        (update.newTitle || update.newDescription ? undefined : current.optimizationError),
       loadingTitle: false,
       loadingDesc: false,
     };
