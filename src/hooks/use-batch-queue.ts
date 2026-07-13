@@ -9,7 +9,7 @@ import {
 } from "@/lib/db";
 import type { CsvRow } from "@/lib/store";
 
-const DEFAULT_BATCH_SIZE = 20;
+const DEFAULT_BATCH_SIZE = 5;
 const BATCH_DELAY_MS = 1000;
 const FREE_TIER_BATCH_DELAY_MS = 2500;
 const CEREBRAS_BATCH_DELAY_MS = 6500;

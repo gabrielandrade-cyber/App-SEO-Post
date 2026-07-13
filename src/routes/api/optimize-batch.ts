@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import * as cheerio from "cheerio";
 import { getAdapter, type BatchItem, type BatchResult } from "@/lib/ai-service";
 import type { AIProvider } from "@/lib/store";
 
@@ -75,11 +74,10 @@ Responda OBRIGATORIAMENTE em formato JSON válido.
 </formato_saida>`;
 }
 
-const SCRAPE_TIMEOUT_MS = 8000;
-const MAX_EXTRACTED_CONTENT_CHARS = 1200;
-const SCRAPE_CONCURRENCY = 3;
-const SCRAPE_REQUEST_DELAY_MS = 250;
-const SCRAPE_RETRY_DELAY_MS = 600;
+const SCRAPE_TIMEOUT_MS = 3000;
+const MAX_HTML_CHARS = 128_000;
+const MAX_EXTRACTED_CONTENT_CHARS = 1000;
+const SCRAPE_CHUNK_SIZE = 2;
 const SCRAPE_USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0",
@@ -88,10 +86,6 @@ const SCRAPE_USER_AGENTS = [
 
 function asString(value: unknown, max = 5000): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function decodeHtmlEntities(text: string): string {
@@ -114,20 +108,13 @@ function decodeHtmlEntities(text: string): string {
 }
 
 function normalizeExtractedText(text: string, max = MAX_EXTRACTED_CONTENT_CHARS): string {
-  return decodeHtmlEntities(text)
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, max);
+  return decodeHtmlEntities(text).replace(/\s+/g, " ").trim().slice(0, max);
 }
 
 function getAttribute(tag: string, attr: string): string {
   const pattern = new RegExp(`${attr}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
   const match = tag.match(pattern);
   return normalizeExtractedText(match?.[1] ?? match?.[2] ?? match?.[3] ?? "", 1000);
-}
-
-function normalizeCheerioText(text: string, max = MAX_EXTRACTED_CONTENT_CHARS): string {
-  return normalizeExtractedText(text.replace(/\s+/g, " "), max);
 }
 
 function stripTags(html: string, max = MAX_EXTRACTED_CONTENT_CHARS): string {
@@ -143,11 +130,7 @@ function extractMetaContent(html: string, keys: string[]): string {
     const property = getAttribute(tag, "property").toLowerCase();
     const itemprop = getAttribute(tag, "itemprop").toLowerCase();
 
-    if (
-      normalizedKeys.has(name) ||
-      normalizedKeys.has(property) ||
-      normalizedKeys.has(itemprop)
-    ) {
+    if (normalizedKeys.has(name) || normalizedKeys.has(property) || normalizedKeys.has(itemprop)) {
       const content = getAttribute(tag, "content");
       if (content) return content;
     }
@@ -156,104 +139,28 @@ function extractMetaContent(html: string, keys: string[]): string {
   return "";
 }
 
-function extractFirstRelevantParagraph(html: string): string {
-  const paragraphs = html.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) ?? [];
-
-  for (const paragraph of paragraphs) {
-    const text = stripTags(paragraph, 320);
-    if (text.length >= 45) return text;
-  }
-
-  return "";
+function extractTagText(html: string, tagName: string, max: number): string {
+  const match = html.match(new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, "i"));
+  return stripTags(match?.[1] ?? "", max);
 }
 
-function selectMainContent($: cheerio.CheerioAPI): cheerio.Cheerio<cheerio.Element> {
-  const selectors = [
-    "main",
-    "article",
-    "[role='main']",
-    ".product",
-    ".product-detail",
-    ".product-info",
-    ".product-description",
-    "#product",
-    "#main",
-    ".main",
-    ".content",
-  ];
-
-  for (const selector of selectors) {
-    const candidate = $(selector).first();
-    if (normalizeCheerioText(candidate.text(), 300).length >= 120) return candidate;
-  }
-
-  return $("body").first();
-}
-
-function extractMainContentText($: cheerio.CheerioAPI): string {
-  const root = selectMainContent($).clone();
-  root
-    .find(
-      [
-        "script",
-        "style",
-        "noscript",
-        "svg",
-        "iframe",
-        "form",
-        "button",
-        "input",
-        "select",
-        "nav",
-        "header",
-        "footer",
-        "aside",
-        "[aria-hidden='true']",
-        ".menu",
-        ".nav",
-        ".breadcrumb",
-        ".breadcrumbs",
-        ".cookie",
-        ".cookies",
-        ".newsletter",
-        ".modal",
-        ".popup",
-      ].join(","),
-    )
-    .remove();
-
-  const pieces: string[] = [];
-
-  root.find("h1,h2,h3,p,li,[itemprop='description']").each((_, element) => {
-    const text = normalizeCheerioText($(element).text(), 260);
-    if (text.length >= 30 && !pieces.includes(text)) pieces.push(text);
-  });
-
-  const joined = pieces.join(" | ");
-  return normalizeCheerioText(joined || root.text());
-}
-
-function extractMetadata(html: string): ScrapedPage {
-  const $ = cheerio.load(html);
-  $("script,style,noscript,svg,iframe").remove();
-
+function extractBodyText(html: string): ScrapedPage {
+  const limitedHtml = html.slice(0, MAX_HTML_CHARS);
   const metaTitle =
-    normalizeCheerioText($("title").first().text(), 160) ||
-    normalizeCheerioText($("meta[name='title']").attr("content") ?? "", 160);
-  const metaDesc = normalizeCheerioText($("meta[name='description']").attr("content") ?? "", 220);
-  const h1 = normalizeCheerioText($("h1").first().text(), 160);
-  const firstParagraph =
-    normalizeCheerioText($("main p,article p,[role='main'] p,p").first().text(), 320) ||
-    extractFirstRelevantParagraph(html);
-  const ogTitle = normalizeCheerioText(
-    $("meta[property='og:title'],meta[name='twitter:title']").attr("content") ?? "",
-    160,
+    extractTagText(limitedHtml, "title", 160) || extractMetaContent(limitedHtml, ["title"]);
+  const metaDesc = extractMetaContent(limitedHtml, ["description"]);
+  const h1 = extractTagText(limitedHtml, "h1", 160);
+  const firstParagraph = extractTagText(limitedHtml, "p", 320);
+  const ogTitle = extractMetaContent(limitedHtml, ["og:title", "twitter:title"]);
+  const ogDesc = extractMetaContent(limitedHtml, ["og:description", "twitter:description"]);
+  const bodyStart = limitedHtml.search(/<body\b/i);
+  const bodyHtml = bodyStart >= 0 ? limitedHtml.slice(bodyStart) : limitedHtml;
+  const bodyText = normalizeExtractedText(
+    bodyHtml
+      .replace(/<(script|style|noscript|svg|template)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<[^>]+>/g, " "),
   );
-  const ogDesc = normalizeCheerioText(
-    $("meta[property='og:description'],meta[name='twitter:description']").attr("content") ?? "",
-    220,
-  );
-  const bodyText = extractMainContentText($);
   const context = [
     metaTitle && `Meta title: ${metaTitle}`,
     metaDesc && `Meta description: ${metaDesc}`,
@@ -273,100 +180,97 @@ function extractMetadata(html: string): ScrapedPage {
   };
 }
 
+async function readHtmlWithLimit(response: Response): Promise<string> {
+  if (!response.body) return (await response.text()).slice(0, MAX_HTML_CHARS);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let html = "";
+
+  while (html.length < MAX_HTML_CHARS) {
+    const { done, value } = await reader.read();
+    if (done) {
+      html += decoder.decode();
+      break;
+    }
+    html += decoder.decode(value, { stream: true });
+  }
+
+  if (html.length >= MAX_HTML_CHARS) {
+    await reader.cancel().catch(() => undefined);
+  }
+
+  return html.slice(0, MAX_HTML_CHARS);
+}
+
 async function scrapeUrl(url: string, userAgentIndex = 0): Promise<ScrapedPage> {
   if (!/^https?:\/\//i.test(url)) return EMPTY_SCRAPED_PAGE;
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SCRAPE_TIMEOUT_MS);
 
-    try {
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": SCRAPE_USER_AGENTS[(userAgentIndex + attempt) % SCRAPE_USER_AGENTS.length],
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-          DNT: "1",
-          "Upgrade-Insecure-Requests": "1",
-          "Sec-Fetch-Dest": "document",
-          "Sec-Fetch-Mode": "navigate",
-          "Sec-Fetch-Site": "none",
-        },
-        signal: controller.signal,
-      });
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": SCRAPE_USER_AGENTS[userAgentIndex % SCRAPE_USER_AGENTS.length],
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+      },
+      signal: controller.signal,
+    });
 
-      if (!response.ok) {
-        if ([403, 408, 429, 500, 502, 503, 504].includes(response.status) && attempt === 0) {
-          await delay(SCRAPE_RETRY_DELAY_MS);
-          continue;
-        }
-        return EMPTY_SCRAPED_PAGE;
-      }
-
-      const contentType = response.headers.get("content-type") ?? "";
-      if (!contentType.toLowerCase().includes("text/html")) return EMPTY_SCRAPED_PAGE;
-
-      return extractMetadata(await response.text());
-    } catch {
-      if (attempt === 0) {
-        await delay(SCRAPE_RETRY_DELAY_MS);
-        continue;
-      }
+    if (!response.ok) {
+      await response.body?.cancel();
       return EMPTY_SCRAPED_PAGE;
-    } finally {
-      clearTimeout(timeout);
     }
-  }
 
-  return EMPTY_SCRAPED_PAGE;
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().includes("text/html")) {
+      await response.body?.cancel();
+      return EMPTY_SCRAPED_PAGE;
+    }
+
+    return extractBodyText(await readHtmlWithLimit(response));
+  } catch {
+    return EMPTY_SCRAPED_PAGE;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function scrapeBatch(rows: BatchRow[]): Promise<PromiseSettledResult<ScrapedPage>[]> {
-  const results: PromiseSettledResult<ScrapedPage>[] = new Array(rows.length);
-  let nextIndex = 0;
+  const results: PromiseSettledResult<ScrapedPage>[] = [];
 
-  async function worker() {
-    while (nextIndex < rows.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-
-      if (index > 0) await delay(SCRAPE_REQUEST_DELAY_MS);
-
-      try {
-        results[index] = {
-          status: "fulfilled",
-          value: await scrapeUrl(rows[index].url, index),
-        };
-      } catch (reason) {
-        results[index] = { status: "rejected", reason };
-      }
-    }
+  for (let index = 0; index < rows.length; index += SCRAPE_CHUNK_SIZE) {
+    const chunk = rows.slice(index, index + SCRAPE_CHUNK_SIZE);
+    const chunkResults = await Promise.allSettled(
+      chunk.map((row, chunkIndex) => scrapeUrl(row.url, index + chunkIndex)),
+    );
+    results.push(...chunkResults);
   }
-
-  await Promise.all(
-    Array.from({ length: Math.min(SCRAPE_CONCURRENCY, rows.length) }, () => worker()),
-  );
 
   return results;
 }
 
-function normalizeResults(resultados: any[], ids: Set<number>): BatchResult[] {
-  return (resultados || [])
-    .map((item) => {
-      const row = item as Record<string, unknown>;
-      const id = Number(row.id);
-      if (!ids.has(id)) return null;
+function normalizeResults(resultados: unknown[], ids: Set<number>): BatchResult[] {
+  const normalized: BatchResult[] = [];
 
-      return {
-        id,
-        newTitle: asString(row.newTitle, 160) || undefined,
-        newDescription: asString(row.newDescription, 320) || undefined,
-        titleJustification: asString(row.titleJustification, 2000) || undefined,
-        descriptionJustification: asString(row.descriptionJustification, 2000) || undefined,
-        optimizationError: asString(row.optimizationError, 500) || undefined,
-      } satisfies BatchResult;
-    })
-    .filter((row): row is BatchResult => Boolean(row));
+  for (const item of resultados || []) {
+    const row = item as Record<string, unknown>;
+    const id = Number(row.id);
+    if (!ids.has(id)) continue;
+
+    normalized.push({
+      id,
+      newTitle: asString(row.newTitle, 160) || undefined,
+      newDescription: asString(row.newDescription, 320) || undefined,
+      titleJustification: asString(row.titleJustification, 2000) || undefined,
+      descriptionJustification: asString(row.descriptionJustification, 2000) || undefined,
+      optimizationError: asString(row.optimizationError, 500) || undefined,
+    });
+  }
+
+  return normalized;
 }
 
 export const Route = createFileRoute("/api/optimize-batch")({
@@ -426,9 +330,12 @@ export const Route = createFileRoute("/api/optimize-batch")({
 
           const resultados = normalizeResults(rawResultados, ids);
           return Response.json({ resultados });
-        } catch (err: any) {
-          const status = err.status || 500;
-          const message = err.message || "Erro interno no servidor de IA.";
+        } catch (err: unknown) {
+          const status =
+            err && typeof err === "object" && "status" in err
+              ? Number((err as { status?: unknown }).status) || 500
+              : 500;
+          const message = err instanceof Error ? err.message : "Erro interno no servidor de IA.";
 
           // Tratar Rate Limits e Quota
           if (status === 429 || status === 402) {
