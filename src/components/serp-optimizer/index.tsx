@@ -4,15 +4,20 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
   Download,
   Inbox,
+  KeyRound,
   Loader2,
   Lock,
   Pause,
   Play,
+  RefreshCw,
+  RotateCcw,
   Settings2,
-  Sparkles,
   Upload,
+  Volume2,
+  VolumeX,
   Wand2,
   X,
 } from "lucide-react";
@@ -24,74 +29,61 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { GlassCard } from "@/components/ui/glass";
 import { Textarea } from "@/components/ui/textarea";
-import { useBatchQueue } from "@/hooks/use-batch-queue";
+import { useBatchQueue, type PauseKind } from "@/hooks/use-batch-queue";
 import {
   clearCsvData,
-  getAllCsvRows,
   getCsvMeta,
   getCsvRow,
   getRowsWindow,
+  iterateCsvRows,
   updateCsvRows,
 } from "@/lib/db";
 import { importCSVToIndexedDB } from "@/lib/csv-parser";
-import { getActiveKey, useSettings, type AIProvider, type CsvRow } from "@/lib/store";
-import { SERP_GRID_TEMPLATE, PROVIDER_LABELS, sanitizeCsvFileName, buildControlCsv } from "./utils";
+import { AI_PROVIDERS, PROVIDER_META, SERP_LIMITS, type AIProvider } from "@/lib/providers";
+import { accessTokenHeader } from "@/lib/server-auth";
+import {
+  isSoundEnabled,
+  playAttention,
+  playQueueDone,
+  playRowDone,
+  primeAudio,
+  setSoundEnabled,
+} from "@/lib/sounds";
+import { getActiveKey, keyFieldFor, useSettings, type CsvRow } from "@/lib/store";
+import {
+  CSV_BOM,
+  SERP_GRID_TEMPLATE,
+  buildControlCsvLines,
+  downloadBlob,
+  isAcceptedCsvFile,
+  sanitizeCsvFileName,
+} from "./utils";
 
-const AI_PROVIDER_OPTIONS: Array<{
-  id: AIProvider;
-  label: string;
-  img?: string;
-  Icon?: typeof Sparkles;
-  color: string;
-}> = [
-  {
-    id: "gemini",
-    label: "Gemini",
-    img: "/google-gemini-icon.webp",
-    color: "from-slate-800 to-slate-900",
-  },
-  { id: "groq", label: "Groq", img: "/groq.png", color: "from-slate-800 to-slate-900" },
-  {
-    id: "cerebras",
-    label: "Cerebras",
-    img: "/cerebras-color.png",
-    color: "from-slate-800 to-slate-900",
-  },
-  { id: "openai", label: "ChatGPT", img: "/chatgpt.svg", color: "from-emerald-700 to-slate-900" },
-];
+const PROVIDER_ICONS: Record<AIProvider, string> = {
+  openai: "/chatgpt.svg",
+  gemini: "/google-gemini-icon.webp",
+  groq: "/groq.png",
+  cerebras: "/cerebras-color.png",
+};
 
-function GlassCard({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={`rounded-3xl border border-white/5 bg-white/[0.02] p-6 shadow-2xl backdrop-blur-2xl ${className}`}
-    >
-      {children}
-    </div>
-  );
-}
+const BRAND_PERSONA_TEMPLATE = `Nome da marca:
+O que vende e como se posiciona:
+Persona (quem compra, o que valoriza, qual e a dor):
+Tom de voz (como a marca fala e como NAO fala):
+Palavras que a marca usa:
+Palavras que a marca evita:
+Diferenciais que podem entrar na description (frete, parcelamento, variedade, garantia, marcas):
+Apelo comercial permitido? (sim / nao, sem preco, oferta ou urgencia): `;
 
-function CharCount({
-  value,
-  idealMin,
-  idealMax,
-}: {
-  value: string;
-  idealMin: number;
-  idealMax: number;
-}) {
-  const len = value.length;
-  const nearMin = Math.max(0, idealMin - 10);
+function CharCount({ value, min, max }: { value: string; min: number; max: number }) {
+  const len = Array.from(value.normalize("NFC")).length;
+  const nearMin = Math.max(0, min - 10);
   const color =
-    len > idealMax
+    len > max
       ? "text-rose-400"
-      : len >= idealMin
+      : len >= min
         ? "text-emerald-400"
         : len >= nearMin
           ? "text-amber-400"
@@ -99,7 +91,7 @@ function CharCount({
 
   return (
     <span className={`mt-1 block text-right font-mono text-[10px] ${color}`}>
-      {len} / {idealMin}-{idealMax}
+      {len} / {min}-{max}
     </span>
   );
 }
@@ -109,8 +101,8 @@ function EditableMetaCell({
   placeholder,
   isEditing,
   minHeight,
-  idealMin,
-  idealMax,
+  min,
+  max,
   onFocus,
   onCommit,
   onMeasure,
@@ -119,8 +111,8 @@ function EditableMetaCell({
   placeholder: string;
   isEditing: boolean;
   minHeight: number;
-  idealMin: number;
-  idealMax: number;
+  min: number;
+  max: number;
   onFocus: () => void;
   onCommit: (value: string) => void;
   onMeasure: () => void;
@@ -128,6 +120,7 @@ function EditableMetaCell({
   const [draft, setDraft] = useState(value);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const onMeasureRef = useRef(onMeasure);
+  const focusedRef = useRef(false);
 
   useEffect(() => {
     onMeasureRef.current = onMeasure;
@@ -144,8 +137,9 @@ function EditableMetaCell({
     window.requestAnimationFrame(() => onMeasureRef.current());
   }, [minHeight]);
 
+  // O valor vindo do banco so substitui o rascunho quando a celula NAO esta em edicao.
   useEffect(() => {
-    setDraft(value);
+    if (!focusedRef.current) setDraft(value);
   }, [value]);
 
   useLayoutEffect(() => {
@@ -157,11 +151,13 @@ function EditableMetaCell({
       <textarea
         ref={textareaRef}
         value={draft}
-        onFocus={onFocus}
-        onChange={(event) => {
-          setDraft(event.target.value);
+        onFocus={() => {
+          focusedRef.current = true;
+          onFocus();
         }}
+        onChange={(event) => setDraft(event.target.value)}
         onBlur={() => {
+          focusedRef.current = false;
           onCommit(draft);
         }}
         className={`w-full resize-none rounded-md p-2 text-sm leading-relaxed outline-none transition-colors duration-200 ${
@@ -172,7 +168,7 @@ function EditableMetaCell({
         placeholder={placeholder}
         style={{ minHeight }}
       />
-      <CharCount value={draft} idealMin={idealMin} idealMax={idealMax} />
+      <CharCount value={draft} min={min} max={max} />
     </div>
   );
 }
@@ -181,7 +177,7 @@ function QueueBadge({ status }: { status: string }) {
   const label =
     {
       idle: "Pronta",
-      running: "A processar",
+      running: "Processando",
       paused: "Pausada",
       done: "Concluida",
       error: "Erro",
@@ -203,40 +199,84 @@ function QueueBadge({ status }: { status: string }) {
   );
 }
 
+const PILL_BUTTON =
+  "liquid-glass-button inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[11px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-50";
+
 export function SerpOptimizer() {
-  const { settings, dispatch } = useSettings();
+  const { settings, dispatch, hydrated } = useSettings();
   const [fileName, setFileName] = useState<string | null>(null);
   const [rowCount, setRowCount] = useState(0);
   const [isImporting, setIsImporting] = useState(false);
   const [importedRows, setImportedRows] = useState(0);
   const [rowCache, setRowCache] = useState<Map<number, CsvRow>>(() => new Map());
   const [refreshKey, setRefreshKey] = useState(0);
-  const [quotaModalOpen, setQuotaModalOpen] = useState(false);
-  const [quotaMessage, setQuotaMessage] = useState("");
+  const [pauseModal, setPauseModal] = useState<{
+    open: boolean;
+    message: string;
+    kind: PauseKind;
+    canResume: boolean;
+  }>({ open: false, message: "", kind: "quota", canResume: true });
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
   const [optimizingRowId, setOptimizingRowId] = useState<number | null>(null);
   const [brandPersonaModalOpen, setBrandPersonaModalOpen] = useState(false);
-  const [brandPersonaDraft, setBrandPersonaDraft] = useState(settings.brandPersona || "");
+  const [brandPersonaDraft, setBrandPersonaDraft] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [editingCell, setEditingCell] = useState<{
     id: number;
     field: "newTitle" | "newDescription";
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
+  const [soundOn, setSoundOn] = useState(true);
+
+  useEffect(() => {
+    setSoundOn(isSoundEnabled());
+  }, []);
+
+  const toggleSound = useCallback(() => {
+    setSoundOn((current) => {
+      const next = !current;
+      setSoundEnabled(next);
+      if (next) {
+        primeAudio();
+        playQueueDone();
+      }
+      return next;
+    });
+  }, []);
 
   const activeKey = getActiveKey(settings);
+  const providerMeta = PROVIDER_META[settings.provider];
   const refreshRows = useCallback(() => setRefreshKey((value) => value + 1), []);
+
+  const onPaused = useCallback((message: string, kind: PauseKind) => {
+    setPauseModal({ open: true, message, kind, canResume: true });
+    toast.error("Fila pausada", { description: message });
+    playAttention();
+  }, []);
 
   const queue = useBatchQueue({
     apiKey: activeKey,
     provider: settings.provider,
     brandPersona: settings.brandPersona,
+    accessToken: settings.accessToken,
     onRowsChanged: refreshRows,
-    onPaused: (message) => {
-      setQuotaMessage(message);
-      setQuotaModalOpen(true);
-      toast.error("Fila pausada", { description: message });
-    },
+    onPaused,
   });
+  const { refreshState } = queue;
+
+  // Barulhinho ao terminar: a fila inteira ou um reprocessamento de erros.
+  const previousStatusRef = useRef(queue.status);
+  const previousRetryingRef = useRef(queue.isRetrying);
+  useEffect(() => {
+    const wasRunning = previousStatusRef.current === "running";
+    if (wasRunning && queue.status === "done") playQueueDone();
+    if (previousRetryingRef.current && !queue.isRetrying && queue.status !== "error") {
+      playQueueDone();
+    }
+    previousStatusRef.current = queue.status;
+    previousRetryingRef.current = queue.isRetrying;
+  }, [queue.status, queue.isRetrying]);
 
   const rowVirtualizer = useVirtualizer({
     count: rowCount,
@@ -274,6 +314,7 @@ export function SerpOptimizer() {
     return () => window.cancelAnimationFrame(frame);
   }, [editingCell, rowCache, rowVirtualizer]);
 
+  // Carga inicial: uma vez, na montagem.
   useEffect(() => {
     let cancelled = false;
 
@@ -281,13 +322,13 @@ export function SerpOptimizer() {
       if (cancelled) return;
       setFileName(meta.fileName);
       setRowCount(meta.rowCount);
-      void queue.refreshState();
+      void refreshState();
     });
 
     return () => {
       cancelled = true;
     };
-  }, [queue]);
+  }, [refreshState]);
 
   useEffect(() => {
     if (!fileName || rowCount === 0 || lastVirtualIndex < firstVirtualIndex) {
@@ -310,41 +351,71 @@ export function SerpOptimizer() {
   }, [fileName, firstVirtualIndex, lastVirtualIndex, refreshKey, rowCount]);
 
   const preflight = useCallback((): boolean => {
+    if (!hydrated) {
+      toast.message("Um instante", { description: "Carregando as configuracoes salvas." });
+      return false;
+    }
     if (!activeKey.trim()) {
       toast.error("API Key ausente", {
-        description: `Defina a chave ${PROVIDER_LABELS[settings.provider]} antes de otimizar.`,
+        description: `Cole a chave ${providerMeta.label} no painel antes de otimizar.`,
       });
       return false;
     }
-
     return true;
-  }, [activeKey, settings.provider]);
+  }, [activeKey, hydrated, providerMeta.label]);
 
   const handleFile = useCallback(
     async (file: File) => {
+      if (!isAcceptedCsvFile(file)) {
+        toast.error("Arquivo nao suportado", {
+          description:
+            "Envie um arquivo .csv (exportado do Screaming Frog, Search Console ou planilha).",
+        });
+        return;
+      }
+
+      await queue.pause();
       setIsImporting(true);
       setImportedRows(0);
       setRowCache(new Map());
 
-      const result = await importCSVToIndexedDB(file, ({ imported }) => {
-        setImportedRows(imported);
-      });
+      try {
+        const result = await importCSVToIndexedDB(file, ({ imported }) =>
+          setImportedRows(imported),
+        );
 
-      if (result.errors.length > 0) {
-        result.errors.forEach((error) => toast.error("Erro no CSV", { description: error }));
-        setFileName(null);
-        setRowCount(0);
-      } else {
-        const meta = await getCsvMeta();
-        setFileName(meta.fileName);
-        setRowCount(meta.rowCount);
-        setImportedRows(meta.rowCount);
-        refreshRows();
-        await queue.refreshState();
-        toast.success(`${meta.rowCount} URLs carregadas com sucesso.`);
+        if (result.errors.length > 0) {
+          if (result.rowsImported > 0) {
+            // Importacao parcial: nao deixa um dataset incompleto para tras.
+            await clearCsvData();
+            setFileName(null);
+            setRowCount(0);
+          }
+          result.errors.forEach((error) => toast.error("Erro no CSV", { description: error }));
+        } else {
+          const meta = await getCsvMeta();
+          setFileName(meta.fileName);
+          setRowCount(meta.rowCount);
+          setImportedRows(meta.rowCount);
+          refreshRows();
+          await queue.refreshState();
+
+          const mappingNote = result.mapping?.byName
+            ? "Colunas reconhecidas pelo cabecalho."
+            : "Colunas lidas por posicao: URL, title, description.";
+          toast.success(`${meta.rowCount} URLs carregadas.`, { description: mappingNote });
+        }
+
+        result.warnings.forEach((warning) =>
+          toast.warning("Aviso do CSV", { description: warning }),
+        );
+      } catch (err) {
+        toast.error("Falha na importacao", {
+          description: err instanceof Error ? err.message : "Erro inesperado ao ler o arquivo.",
+        });
+      } finally {
+        setIsImporting(false);
       }
-
-      setIsImporting(false);
     },
     [queue, refreshRows],
   );
@@ -368,6 +439,7 @@ export function SerpOptimizer() {
   );
 
   const clearFile = useCallback(async () => {
+    await queue.pause();
     await clearCsvData();
     setFileName(null);
     setRowCount(0);
@@ -378,11 +450,22 @@ export function SerpOptimizer() {
   }, [queue, refreshRows]);
 
   const startQueue = useCallback(() => {
+    primeAudio();
     if (!preflight() || rowCount === 0) return;
+    if (queue.status === "done") {
+      setRestartConfirmOpen(true);
+      return;
+    }
     void queue.run();
   }, [preflight, queue, rowCount]);
 
+  const confirmRestart = useCallback(() => {
+    setRestartConfirmOpen(false);
+    void queue.run({ restart: true });
+  }, [queue]);
+
   const resumeQueue = useCallback(() => {
+    primeAudio();
     if (!preflight() || rowCount === 0) return;
     void queue.resume();
   }, [preflight, queue, rowCount]);
@@ -391,15 +474,36 @@ export function SerpOptimizer() {
     void queue.pause();
   }, [queue]);
 
+  const retryErrors = useCallback(() => {
+    primeAudio();
+    if (!preflight()) return;
+    void queue.retryErrors().then((remaining) => {
+      if (remaining === 0) toast.success("Todas as linhas com erro foram reprocessadas.");
+    });
+  }, [preflight, queue]);
+
+  const retryOutOfRange = useCallback(() => {
+    primeAudio();
+    if (!preflight()) return;
+    void queue.retryOutOfRange().then((remaining) => {
+      if (remaining === 0) toast.success("Todos os textos estao dentro da faixa de caracteres.");
+      else if (remaining !== undefined) {
+        toast.warning(
+          `${remaining} linha(s) continuam fora da faixa. Ajuste manualmente ou rode de novo.`,
+        );
+      }
+    });
+  }, [preflight, queue]);
+
   const openBrandPersonaModal = useCallback(() => {
     setBrandPersonaDraft(settings.brandPersona || "");
     setBrandPersonaModalOpen(true);
   }, [settings.brandPersona]);
 
   const saveBrandPersona = useCallback(() => {
-    dispatch({ type: "SET_BRAND_PERSONA", payload: brandPersonaDraft });
+    dispatch({ type: "SET_BRAND_PERSONA", payload: brandPersonaDraft.trim() });
     setBrandPersonaModalOpen(false);
-    toast.success("Tom de voz guardado.");
+    toast.success("Tom de voz salvo.");
   }, [brandPersonaDraft, dispatch]);
 
   const handleCellEdit = useCallback(
@@ -407,19 +511,15 @@ export function SerpOptimizer() {
       setRowCache((prev) => {
         const current = prev.get(id);
         if (!current) return prev;
-
         const next = new Map(prev);
         next.set(id, { ...current, [field]: value });
         return next;
       });
 
-      const update: Partial<CsvRow> & Pick<CsvRow, "id"> = { id };
-      update[field] = value;
-
       try {
-        await updateCsvRows([update]);
+        await updateCsvRows([{ id, [field]: value }]);
       } catch {
-        toast.error("Nao foi possivel guardar a edicao.");
+        toast.error("Nao foi possivel salvar a edicao.");
         refreshRows();
       }
     },
@@ -428,6 +528,7 @@ export function SerpOptimizer() {
 
   const optimizeRow = useCallback(
     async (rowId: number) => {
+      primeAudio();
       if (!preflight()) return;
 
       const row = await getCsvRow(rowId);
@@ -438,7 +539,10 @@ export function SerpOptimizer() {
       try {
         const response = await fetch("/api/optimize-batch", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...accessTokenHeader(settings.accessToken),
+          },
           body: JSON.stringify({
             apiKey: activeKey,
             provider: settings.provider,
@@ -447,23 +551,38 @@ export function SerpOptimizer() {
           }),
         });
 
-        const data = await response.json().catch(() => ({}));
+        const data = (await response.json().catch(() => ({}))) as {
+          resultados?: Array<Partial<CsvRow> & Pick<CsvRow, "id">>;
+          error?: string;
+        };
 
-        if (response.status === 429 || response.status === 402) {
-          const message =
-            "A API atingiu o limite ou ficou sem saldo. A fila foi pausada. Insira uma nova Chave API ou aguarde e clique em 'Retomar'.";
-          setQuotaMessage(message);
-          setQuotaModalOpen(true);
+        if ([401, 402, 403, 429].includes(response.status)) {
+          const kind: PauseKind =
+            response.status === 402 ? "billing" : response.status === 429 ? "quota" : "auth";
+          setPauseModal({
+            open: true,
+            kind,
+            canResume: false,
+            message: data.error || "O provedor recusou a requisicao. Confira a chave ou aguarde.",
+          });
           return;
         }
 
-        if (!response.ok) {
-          throw new Error(data.error || `Erro HTTP ${response.status}`);
-        }
+        if (!response.ok) throw new Error(data.error || `Erro HTTP ${response.status}`);
 
-        await updateCsvRows(data.resultados ?? []);
+        const resultados = data.resultados ?? [];
+        const result = resultados.find((item) => item.id === row.id);
+        if (!result) throw new Error("A IA nao devolveu resultado para esta linha.");
+
+        await updateCsvRows([result]);
         refreshRows();
-        toast.success("Linha otimizada.");
+
+        if (result.optimizationError) {
+          toast.error("A linha voltou com erro", { description: result.optimizationError });
+        } else {
+          playRowDone();
+          toast.success("Linha otimizada.");
+        }
       } catch (err) {
         toast.error("Erro da IA", {
           description: err instanceof Error ? err.message : "Erro inesperado.",
@@ -472,25 +591,33 @@ export function SerpOptimizer() {
         setOptimizingRowId(null);
       }
     },
-    [activeKey, preflight, refreshRows, settings.brandPersona, settings.provider],
+    [
+      activeKey,
+      preflight,
+      refreshRows,
+      settings.accessToken,
+      settings.brandPersona,
+      settings.provider,
+    ],
   );
 
   const downloadCsv = useCallback(async () => {
-    const rows = await getAllCsvRows();
-    if (rows.length === 0) {
+    const parts: string[] = [CSV_BOM];
+    const total = await iterateCsvRows((rows) => {
+      parts.push(buildControlCsvLines(rows), "\r\n");
+    });
+
+    if (total === 0) {
       toast.error("Nao ha dados para exportar.");
       return;
     }
 
-    const csv = buildControlCsv(rows);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${sanitizeCsvFileName(fileName ?? "serp-optimized")}-controle.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.success("Exportacao para controle iniciada.");
+    parts.pop();
+    downloadBlob(
+      new Blob(parts, { type: "text/csv;charset=utf-8" }),
+      `${sanitizeCsvFileName(fileName ?? "serp-optimized")}-controle.csv`,
+    );
+    toast.success(`Exportacao iniciada: ${total} linhas.`);
   }, [fileName]);
 
   const progressLabel = useMemo(() => {
@@ -499,56 +626,123 @@ export function SerpOptimizer() {
     return `${rowCount} linhas carregadas`;
   }, [fileName, importedRows, isImporting, rowCount]);
 
+  const keyField = keyFieldFor(settings.provider);
+  const securityNote =
+    settings.keySecurity.status === "locked" ||
+    settings.keySecurity.status === "session-only" ||
+    settings.keySecurity.status === "unavailable"
+      ? settings.keySecurity.message
+      : null;
+
+  const isRunning = queue.status === "running";
+  const activeRanges = isRunning ? queue.activeRanges : [];
+
   return (
     <>
-      <Dialog open={quotaModalOpen} onOpenChange={setQuotaModalOpen}>
+      <Dialog
+        open={pauseModal.open}
+        onOpenChange={(open) => setPauseModal((prev) => ({ ...prev, open }))}
+      >
         <DialogContent className="border border-amber-300/20 bg-slate-900/95 text-white sm:rounded-[24px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-white">
-              <AlertTriangle className="h-5 w-5 text-amber-300" />
-              Fila pausada
+              {pauseModal.kind === "auth" ? (
+                <KeyRound className="h-5 w-5 text-amber-300" />
+              ) : (
+                <AlertTriangle className="h-5 w-5 text-amber-300" />
+              )}
+              {pauseModal.kind === "auth"
+                ? "Chave recusada"
+                : pauseModal.kind === "billing"
+                  ? "Conta sem saldo"
+                  : pauseModal.canResume
+                    ? "Fila pausada"
+                    : "Limite atingido"}
             </DialogTitle>
-            <DialogDescription className="text-white/65">{quotaMessage}</DialogDescription>
+            <DialogDescription className="text-white/65">{pauseModal.message}</DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-2">
             <button
-              onClick={() => setQuotaModalOpen(false)}
+              onClick={() => setPauseModal((prev) => ({ ...prev, open: false }))}
               className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/80"
             >
               Fechar
             </button>
+            {pauseModal.canResume && (
+              <button
+                onClick={() => {
+                  setPauseModal((prev) => ({ ...prev, open: false }));
+                  resumeQueue();
+                }}
+                className={`${PILL_BUTTON} border-emerald-300/30 px-4 py-2 text-xs font-semibold`}
+              >
+                <Play className="h-3.5 w-3.5 text-emerald-300" />
+                Retomar fila
+              </button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={restartConfirmOpen} onOpenChange={setRestartConfirmOpen}>
+        <DialogContent className="border border-white/10 bg-slate-900/95 text-white sm:rounded-[24px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <RotateCcw className="h-5 w-5 text-indigo-300" />
+              Processar tudo de novo?
+            </DialogTitle>
+            <DialogDescription className="text-white/65">
+              A fila ja foi concluida. Rodar de novo substitui todos os titles e descriptions
+              gerados, inclusive os que voce editou a mao. Para corrigir so as linhas com erro, use
+              Reprocessar erros.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
             <button
-              onClick={() => {
-                setQuotaModalOpen(false);
-                resumeQueue();
-              }}
-              className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-xs font-semibold text-white"
+              onClick={() => setRestartConfirmOpen(false)}
+              className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/80"
             >
-              <Play className="h-3.5 w-3.5 text-emerald-300" />
-              Retomar
+              Cancelar
+            </button>
+            <button
+              onClick={confirmRestart}
+              className={`${PILL_BUTTON} border-indigo-300/30 px-4 py-2 text-xs font-semibold`}
+            >
+              <Play className="h-3.5 w-3.5 text-indigo-300" />
+              Rodar do inicio
             </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={brandPersonaModalOpen} onOpenChange={setBrandPersonaModalOpen}>
-        <DialogContent className="max-w-2xl border border-white/10 bg-slate-950/95 text-white backdrop-blur-2xl sm:rounded-[28px]">
+        <DialogContent className="max-h-[88vh] max-w-2xl overflow-y-auto border border-white/10 bg-slate-950/95 text-white backdrop-blur-2xl sm:rounded-[28px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-white">
               <Settings2 className="h-4 w-4 text-fuchsia-300" />
-              Tom de Voz da Marca
+              Tom de voz da marca
             </DialogTitle>
             <DialogDescription className="text-white/60">
-              Guarde aqui a persona e as diretrizes de linguagem usadas pela IA.
+              A IA le estas diretrizes antes de escrever cada title e description e explica, na
+              justificativa, como as aplicou. Quanto mais concreto, melhor: nome da marca (para nao
+              usar no title), o que vende, persona, tom, palavras que usa e evita, diferenciais.
             </DialogDescription>
           </DialogHeader>
           <Textarea
             value={brandPersonaDraft}
-            onChange={(e) => setBrandPersonaDraft(e.target.value)}
-            placeholder="Ex: A persona da marca é amigável, acessível e focada na Classe C. O tom é íntimo e otimista."
-            className="min-h-[220px] resize-none rounded-2xl border-white/10 bg-black/30 p-4 text-sm text-white placeholder:text-white/30"
+            onChange={(event) => setBrandPersonaDraft(event.target.value)}
+            placeholder={BRAND_PERSONA_TEMPLATE}
+            className="h-[260px] max-h-[45vh] resize-none overflow-y-auto rounded-2xl border-white/10 bg-black/30 p-4 font-mono text-[13px] leading-relaxed text-white placeholder:text-white/30"
           />
           <DialogFooter className="gap-2 sm:gap-2">
+            {!brandPersonaDraft.trim() && (
+              <button
+                onClick={() => setBrandPersonaDraft(BRAND_PERSONA_TEMPLATE)}
+                className="mr-auto rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/80"
+              >
+                Usar modelo de preenchimento
+              </button>
+            )}
             <button
               onClick={() => setBrandPersonaModalOpen(false)}
               className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-white/80"
@@ -557,10 +751,10 @@ export function SerpOptimizer() {
             </button>
             <button
               onClick={saveBrandPersona}
-              className="inline-flex items-center gap-2 rounded-full border border-fuchsia-300/30 bg-fuchsia-500/20 px-5 py-2 text-xs font-semibold text-white shadow-[0_0_20px_-8px_rgba(217,70,239,0.9)]"
+              className="liquid-glass-button inline-flex items-center gap-2 rounded-full border border-fuchsia-300/30 bg-fuchsia-500/20 px-5 py-2 text-xs font-semibold text-white shadow-[0_0_20px_-8px_rgba(217,70,239,0.9)]"
             >
               <Wand2 className="h-3.5 w-3.5 text-fuchsia-200" />
-              Guardar tom de voz
+              Salvar tom de voz
             </button>
           </DialogFooter>
         </DialogContent>
@@ -568,17 +762,19 @@ export function SerpOptimizer() {
 
       <div className="mx-auto grid w-full max-w-[1760px] grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[300px_minmax(0,1fr)] xl:px-6">
         <aside className="space-y-6">
-          <GlassCard className="p-5">
-            <h2 className="mb-4 text-sm font-semibold text-white/90">AI Provider</h2>
+          <GlassCard className="p-5" variant="control">
+            <h2 className="mb-4 text-sm font-semibold text-white/90">Provedor de IA</h2>
             <div className="grid grid-cols-2 gap-2">
-              {AI_PROVIDER_OPTIONS.map((opt) => {
-                const active = settings.provider === opt.id;
-                const Icon = opt.Icon;
+              {AI_PROVIDERS.map((id) => {
+                const meta = PROVIDER_META[id];
+                const active = settings.provider === id;
 
                 return (
                   <button
-                    key={opt.id}
-                    onClick={() => dispatch({ type: "SET_PROVIDER", payload: opt.id })}
+                    key={id}
+                    type="button"
+                    title={meta.hint}
+                    onClick={() => dispatch({ type: "SET_PROVIDER", payload: id })}
                     className={`group relative flex flex-col items-center gap-1.5 rounded-2xl border p-2.5 text-xs transition-all duration-300 ${
                       active
                         ? "border-white/30 bg-white/10 shadow-[0_0_20px_-5px_rgba(255,255,255,0.3)]"
@@ -586,106 +782,90 @@ export function SerpOptimizer() {
                     }`}
                   >
                     <div
-                      className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${opt.color} border border-white/10 shadow-inner`}
+                      className={`flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-gradient-to-br shadow-inner ${
+                        id === "openai"
+                          ? "from-emerald-700 to-slate-900"
+                          : "from-slate-800 to-slate-900"
+                      }`}
                     >
-                      {opt.img ? (
-                        <img
-                          src={opt.img}
-                          alt={opt.label}
-                          className="h-5 w-5 object-contain drop-shadow-sm"
-                        />
-                      ) : Icon ? (
-                        <Icon className="h-5 w-5 text-emerald-100 drop-shadow-sm" />
-                      ) : null}
+                      <img
+                        src={PROVIDER_ICONS[id]}
+                        alt=""
+                        className="h-5 w-5 object-contain drop-shadow-sm"
+                      />
                     </div>
-                    <span className="font-medium text-white/90">{opt.label}</span>
+                    <span className="font-medium text-white/90">{meta.label}</span>
                   </button>
                 );
               })}
             </div>
 
             <div className="mt-5 space-y-3">
-              {settings.provider === "gemini" && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-white/70">
-                    Chave Gemini
-                  </label>
-                  <div className="relative">
-                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-                    <input
-                      type="password"
-                      value={settings.geminiKey}
-                      onChange={(event) =>
-                        dispatch({ type: "SET_GEMINI_KEY", payload: event.target.value })
-                      }
-                      placeholder="AIzaSy..."
-                      className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
-                    />
-                  </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-white/70">
+                  Chave {providerMeta.label}
+                </label>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings[keyField]}
+                    onChange={(event) =>
+                      dispatch({
+                        type: "SET_SECRET",
+                        field: keyField,
+                        payload: event.target.value.trim(),
+                      })
+                    }
+                    placeholder={hydrated ? providerMeta.keyPlaceholder : "Carregando..."}
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white outline-none backdrop-blur-xl transition-all duration-300 placeholder:text-white/30 focus:border-white/30 focus:bg-white/10"
+                  />
+                </div>
+              </div>
+
+              {securityNote && (
+                <div className="flex items-start gap-2 rounded-xl border border-amber-300/20 bg-amber-400/10 p-3 text-[11px] leading-relaxed text-amber-100/90">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
+                  <span>{securityNote}</span>
                 </div>
               )}
-
-              {settings.provider === "groq" && (
+              <button
+                type="button"
+                onClick={() => setAdvancedOpen((open) => !open)}
+                className="flex w-full items-center justify-between rounded-xl px-1 py-1 text-[11px] font-medium text-white/50 transition-colors hover:text-white/80"
+              >
+                Avancado
+                <ChevronDown
+                  className={`h-3.5 w-3.5 transition-transform duration-300 ${advancedOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+              {advancedOpen && (
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-white/70">
-                    Chave Groq
+                    Token de acesso do Worker (opcional)
                   </label>
-                  <div className="relative">
-                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-                    <input
-                      type="password"
-                      value={settings.groqKey}
-                      onChange={(event) =>
-                        dispatch({ type: "SET_GROQ_KEY", payload: event.target.value })
-                      }
-                      placeholder="gsk_..."
-                      className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {settings.provider === "openai" && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-white/70">
-                    Chave ChatGPT/OpenAI
-                  </label>
-                  <div className="relative">
-                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-                    <input
-                      type="password"
-                      value={settings.openaiKey}
-                      onChange={(event) =>
-                        dispatch({ type: "SET_OPENAI_KEY", payload: event.target.value })
-                      }
-                      placeholder="sk-..."
-                      className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {settings.provider === "cerebras" && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-white/70">
-                    Chave Cerebras
-                  </label>
-                  <div className="relative">
-                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
-                    <input
-                      type="password"
-                      value={settings.cerebrasKey}
-                      onChange={(event) =>
-                        dispatch({ type: "SET_CEREBRAS_KEY", payload: event.target.value })
-                      }
-                      placeholder="csk-..."
-                      className="w-full rounded-2xl border border-white/10 bg-white/5 py-2.5 pl-10 pr-3 text-sm text-white placeholder:text-white/30 outline-none backdrop-blur-xl transition-all duration-300 focus:border-white/30 focus:bg-white/10"
-                    />
-                  </div>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={settings.accessToken}
+                    onChange={(event) =>
+                      dispatch({
+                        type: "SET_SECRET",
+                        field: "accessToken",
+                        payload: event.target.value.trim(),
+                      })
+                    }
+                    placeholder="so se OPTMOS_ACCESS_TOKEN estiver definido"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white outline-none backdrop-blur-xl transition-all duration-300 placeholder:text-white/30 focus:border-white/30 focus:bg-white/10"
+                  />
+                  <p className="mt-2 text-[11px] leading-relaxed text-white/45">
+                    Protege o endpoint publicado contra uso por terceiros. Defina o secret no
+                    Cloudflare e cole o mesmo valor aqui.
+                  </p>
                 </div>
               )}
             </div>
-
           </GlassCard>
         </aside>
 
@@ -695,13 +875,13 @@ export function SerpOptimizer() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".csv"
+                accept=".csv,.txt,.tsv,text/csv,text/plain"
                 className="hidden"
                 onChange={onFileChange}
               />
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-sm font-semibold text-white/90">1. Base de Dados (CSV)</h2>
+                  <h2 className="text-sm font-semibold text-white/90">1. Base de dados (CSV)</h2>
                   <p className="mt-1 text-xs text-white/50">{progressLabel}</p>
                 </div>
                 {fileName && (
@@ -728,17 +908,20 @@ export function SerpOptimizer() {
                 </div>
                 <p className="text-sm font-medium text-white/90">
                   {isImporting
-                    ? `A importar ${importedRows} linhas...`
+                    ? `Importando ${importedRows} linhas...`
                     : fileName
                       ? fileName
                       : "Arraste o CSV ou clique para procurar"}
                 </p>
+                <p className="mt-1 text-[11px] text-white/45">
+                  Colunas URL, title e description, por nome no cabecalho ou por posicao.
+                </p>
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isImporting}
-                  className="mt-5 rounded-full bg-white/10 px-4 py-2 text-xs font-medium text-white backdrop-blur-xl transition-all duration-300 hover:bg-white/20 disabled:opacity-50"
+                  className="liquid-glass-button mt-5 rounded-full border border-white/15 px-4 py-2 text-xs font-medium text-white disabled:opacity-50"
                 >
-                  {fileName ? "Substituir ficheiro" : "Selecionar ficheiro"}
+                  {fileName ? "Substituir arquivo" : "Selecionar arquivo"}
                 </button>
               </div>
             </GlassCard>
@@ -746,10 +929,10 @@ export function SerpOptimizer() {
             <GlassCard className="flex min-h-[220px] flex-col p-5">
               <div className="mb-4">
                 <h2 className="text-sm font-semibold text-white/90">
-                  2. Tom de Voz da Marca (Opcional)
+                  2. Tom de voz da marca (opcional)
                 </h2>
                 <p className="mt-1 text-xs text-white/50">
-                  Se vazio, a IA usa um tom neutro e comercial com base no conteúdo rastreado.
+                  Se vazio, a IA usa um tom neutro e comercial com base no conteudo rastreado.
                 </p>
               </div>
               <button
@@ -763,9 +946,9 @@ export function SerpOptimizer() {
                   <span className="block text-sm font-semibold text-white">
                     {settings.brandPersona ? "Editar tom de voz" : "Configurar tom de voz"}
                   </span>
-                  <span className="mt-1 line-clamp-2 block text-xs leading-relaxed text-white/60">
+                  <span className="mt-1 line-clamp-2 break-words text-xs leading-relaxed text-white/60">
                     {settings.brandPersona ||
-                      "Adicione persona, linguagem e diretrizes para a IA usar nas otimizações."}
+                      "Nome da marca, persona, tom, palavras que usa e evita, diferenciais."}
                   </span>
                 </span>
                 <Wand2 className="h-4 w-4 shrink-0 text-white/65 transition-transform duration-300 group-hover:rotate-12" />
@@ -775,7 +958,7 @@ export function SerpOptimizer() {
         </section>
 
         <section className="min-w-0 lg:col-span-2">
-          <GlassCard className="overflow-hidden !p-4 md:!p-5">
+          <GlassCard className="overflow-hidden !p-4 md:!p-5" variant="content">
             <div className="flex flex-col gap-3 border-b border-white/5 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-white/90">SERP DataGrid</h2>
@@ -784,28 +967,53 @@ export function SerpOptimizer() {
               <div className="flex flex-wrap items-center gap-2">
                 {fileName && (
                   <>
-                    {queue.status !== "running" && (
+                    {!isRunning && (
                       <button
                         onClick={
                           queue.status === "paused" || queue.status === "error"
                             ? resumeQueue
                             : startQueue
                         }
-                        className="liquid-glass-button inline-flex items-center gap-1.5 rounded-full border border-emerald-300/30 px-3.5 py-1.5 text-[11px] font-medium text-white"
+                        disabled={queue.isRetrying}
+                        className={`${PILL_BUTTON} border-emerald-300/30`}
                       >
                         <Play className="h-3 w-3 text-emerald-300" />
                         {queue.status === "paused" || queue.status === "error"
                           ? "Retomar fila"
-                          : "Iniciar fila"}
+                          : queue.status === "done"
+                            ? "Rodar de novo"
+                            : "Iniciar fila"}
                       </button>
                     )}
-                    {queue.status === "running" && (
-                      <button
-                        onClick={pauseQueue}
-                        className="liquid-glass-button inline-flex items-center gap-1.5 rounded-full border border-amber-300/30 px-3.5 py-1.5 text-[11px] font-medium text-white"
-                      >
+                    {isRunning && (
+                      <button onClick={pauseQueue} className={`${PILL_BUTTON} border-amber-300/30`}>
                         <Pause className="h-3 w-3 text-amber-300" />
                         Pausar fila
+                      </button>
+                    )}
+                    {queue.errorCount > 0 && !isRunning && (
+                      <button
+                        onClick={retryErrors}
+                        disabled={queue.isRetrying}
+                        className={`${PILL_BUTTON} border-rose-300/30`}
+                      >
+                        <RefreshCw
+                          className={`h-3 w-3 text-rose-300 ${queue.isRetrying ? "animate-spin" : ""}`}
+                        />
+                        Reprocessar {queue.errorCount} erro{queue.errorCount !== 1 ? "s" : ""}
+                      </button>
+                    )}
+                    {queue.outOfRangeCount > 0 && !isRunning && (
+                      <button
+                        onClick={retryOutOfRange}
+                        disabled={queue.isRetrying}
+                        title="Reescreve so as linhas cujo title ou description ficou fora de 50 a 58 / 150 a 160 caracteres"
+                        className={`${PILL_BUTTON} border-amber-300/30`}
+                      >
+                        <RefreshCw
+                          className={`h-3 w-3 text-amber-300 ${queue.isRetrying ? "animate-spin" : ""}`}
+                        />
+                        Ajustar {queue.outOfRangeCount} fora da faixa
                       </button>
                     )}
                     <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-wider text-white/60">
@@ -815,8 +1023,21 @@ export function SerpOptimizer() {
                   </>
                 )}
                 <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] uppercase tracking-wider text-white/60">
-                  {PROVIDER_LABELS[settings.provider]}
+                  {providerMeta.label}
                 </span>
+                <button
+                  type="button"
+                  onClick={toggleSound}
+                  title={soundOn ? "Som ao concluir: ligado" : "Som ao concluir: desligado"}
+                  aria-label={soundOn ? "Desligar som de conclusao" : "Ligar som de conclusao"}
+                  className="liquid-glass-button inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/15 text-white/70"
+                >
+                  {soundOn ? (
+                    <Volume2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <VolumeX className="h-3.5 w-3.5" />
+                  )}
+                </button>
               </div>
             </div>
 
@@ -841,11 +1062,11 @@ export function SerpOptimizer() {
                       style={{ gridTemplateColumns: SERP_GRID_TEMPLATE }}
                     >
                       <div className="px-4 py-3 font-medium">URL</div>
-                      <div className="px-4 py-3 font-medium">Titulo atual</div>
-                      <div className="px-4 py-3 font-medium">Novo titulo</div>
-                      <div className="px-4 py-3 font-medium">Descricao atual</div>
-                      <div className="px-4 py-3 font-medium">Nova descricao</div>
-                      <div className="px-4 py-3 text-right font-medium">Ações</div>
+                      <div className="px-4 py-3 font-medium">Title atual</div>
+                      <div className="px-4 py-3 font-medium">Novo title</div>
+                      <div className="px-4 py-3 font-medium">Description atual</div>
+                      <div className="px-4 py-3 font-medium">Nova description</div>
+                      <div className="px-4 py-3 text-right font-medium">Acoes</div>
                     </div>
 
                     <div
@@ -867,6 +1088,11 @@ export function SerpOptimizer() {
                             editingCell.field === "newDescription",
                           );
                           const isEditingRow = isEditingTitle || isEditingDescription;
+                          const isActiveRow = activeRanges.some(
+                            (range) =>
+                              virtualRow.index >= range.start && virtualRow.index < range.end,
+                          );
+                          const isDone = Boolean(row?.optimizedTitle && row?.optimizedDesc);
 
                           return (
                             <div
@@ -876,9 +1102,9 @@ export function SerpOptimizer() {
                               className={`absolute left-0 top-0 grid min-h-[118px] w-full items-start border-t border-white/5 transition-colors duration-200 ${
                                 isEditingRow
                                   ? "z-20 bg-slate-950/90 shadow-2xl"
-                                  : `z-0 hover:bg-white/[0.03] ${
-                                      virtualRow.index % 2 === 1 ? "bg-white/[0.015]" : ""
-                                    }`
+                                  : isActiveRow
+                                    ? "optmos-row-active z-0"
+                                    : `z-0 hover:bg-white/[0.03] ${virtualRow.index % 2 === 1 ? "bg-white/[0.015]" : ""}`
                               }`}
                               style={{
                                 gridTemplateColumns: SERP_GRID_TEMPLATE,
@@ -896,27 +1122,37 @@ export function SerpOptimizer() {
                                     <p className="line-clamp-2 text-xs text-white/70">
                                       {row.title}
                                     </p>
-                                    <CharCount value={row.title} idealMin={50} idealMax={60} />
+                                    <CharCount
+                                      value={row.title}
+                                      min={SERP_LIMITS.title.min}
+                                      max={SERP_LIMITS.title.max}
+                                    />
                                   </div>
                                   <div className="min-w-0 px-4 py-3">
-                                    <div className="relative min-h-10 w-full">
-                                      <EditableMetaCell
-                                        value={row.newTitle ?? ""}
-                                        isEditing={isEditingTitle}
-                                        minHeight={40}
-                                        idealMin={50}
-                                        idealMax={60}
-                                        onFocus={() => {
-                                          setEditingCell({ id: row.id, field: "newTitle" });
-                                        }}
-                                        onCommit={(value) => {
-                                          void handleCellEdit(row.id, "newTitle", value);
-                                          setEditingCell(null);
-                                        }}
-                                        onMeasure={() => measureRow(virtualRow.index)}
-                                        placeholder="O título gerado aparecerá aqui..."
-                                      />
-                                    </div>
+                                    <EditableMetaCell
+                                      value={row.newTitle ?? ""}
+                                      isEditing={isEditingTitle}
+                                      minHeight={40}
+                                      min={SERP_LIMITS.title.min}
+                                      max={SERP_LIMITS.title.max}
+                                      onFocus={() =>
+                                        setEditingCell({ id: row.id, field: "newTitle" })
+                                      }
+                                      onCommit={(value) => {
+                                        void handleCellEdit(row.id, "newTitle", value);
+                                        setEditingCell(null);
+                                      }}
+                                      onMeasure={() => measureRow(virtualRow.index)}
+                                      placeholder="O title gerado aparece aqui..."
+                                    />
+                                    {row.titleJustification && (
+                                      <p
+                                        className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-white/40"
+                                        title={row.titleJustification}
+                                      >
+                                        {row.titleJustification}
+                                      </p>
+                                    )}
                                   </div>
                                   <div className="min-w-0 px-4 py-3">
                                     <p className="line-clamp-2 text-xs text-white/70">
@@ -924,59 +1160,63 @@ export function SerpOptimizer() {
                                     </p>
                                     <CharCount
                                       value={row.description}
-                                      idealMin={150}
-                                      idealMax={160}
+                                      min={SERP_LIMITS.description.min}
+                                      max={SERP_LIMITS.description.max}
                                     />
                                   </div>
                                   <div className="min-w-0 px-4 py-3">
-                                    <div className="relative min-h-12 w-full">
-                                      <EditableMetaCell
-                                        value={row.newDescription ?? ""}
-                                        isEditing={isEditingDescription}
-                                        minHeight={48}
-                                        idealMin={150}
-                                        idealMax={160}
-                                        onMeasure={() => measureRow(virtualRow.index)}
-                                        onFocus={() => {
-                                          setEditingCell({ id: row.id, field: "newDescription" });
-                                        }}
-                                        onCommit={(value) => {
-                                          void handleCellEdit(
-                                            row.id,
-                                            "newDescription",
-                                            value,
-                                          );
-                                          setEditingCell(null);
-                                        }}
-                                        placeholder="A descrição gerada aparecerá aqui..."
-                                      />
-                                    </div>
+                                    <EditableMetaCell
+                                      value={row.newDescription ?? ""}
+                                      isEditing={isEditingDescription}
+                                      minHeight={48}
+                                      min={SERP_LIMITS.description.min}
+                                      max={SERP_LIMITS.description.max}
+                                      onMeasure={() => measureRow(virtualRow.index)}
+                                      onFocus={() =>
+                                        setEditingCell({ id: row.id, field: "newDescription" })
+                                      }
+                                      onCommit={(value) => {
+                                        void handleCellEdit(row.id, "newDescription", value);
+                                        setEditingCell(null);
+                                      }}
+                                      placeholder="A description gerada aparece aqui..."
+                                    />
+                                    {row.descriptionJustification && (
+                                      <p
+                                        className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-white/40"
+                                        title={row.descriptionJustification}
+                                      >
+                                        {row.descriptionJustification}
+                                      </p>
+                                    )}
                                   </div>
-                                  <div className="px-4 py-3">
-                                    <div className="flex justify-end gap-1.5">
+                                  <div className="px-3 py-3">
+                                    <div className="flex items-center justify-end gap-1.5">
                                       {row.optimizationError && (
                                         <span
                                           title={row.optimizationError}
-                                          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-amber-300/25 bg-amber-400/10"
+                                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-amber-300/25 bg-amber-400/10"
                                         >
                                           <AlertTriangle className="h-3 w-3 text-amber-300" />
                                         </span>
                                       )}
                                       <button
                                         disabled={
-                                          optimizingRowId === row.id || queue.status === "running"
+                                          optimizingRowId === row.id ||
+                                          isRunning ||
+                                          queue.isRetrying
                                         }
                                         onClick={() => void optimizeRow(row.id)}
-                                        title="Otimizar linha"
-                                        className={`liquid-glass-button inline-flex h-7 w-7 items-center justify-center rounded-full border text-white disabled:opacity-60 ${
-                                          row.optimizedTitle && row.optimizedDesc
+                                        title={isDone ? "Gerar de novo" : "Otimizar esta linha"}
+                                        className={`liquid-glass-button inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-white disabled:opacity-60 ${
+                                          isDone
                                             ? "border-emerald-400/30 bg-emerald-400/10"
                                             : "border-white/15"
                                         }`}
                                       >
-                                        {optimizingRowId === row.id ? (
+                                        {optimizingRowId === row.id || isActiveRow ? (
                                           <Loader2 className="h-3 w-3 animate-spin" />
-                                        ) : row.optimizedTitle && row.optimizedDesc ? (
+                                        ) : isDone ? (
                                           <Check className="h-3 w-3 text-emerald-400" />
                                         ) : (
                                           <Wand2 className="h-3 w-3 text-fuchsia-200" />
@@ -987,7 +1227,7 @@ export function SerpOptimizer() {
                                 </>
                               ) : (
                                 <div className="col-span-6 px-6 py-4 text-xs text-white/35">
-                                  A carregar linha...
+                                  Carregando linha...
                                 </div>
                               )}
                             </div>
@@ -1000,14 +1240,15 @@ export function SerpOptimizer() {
 
                 <div className="flex items-center justify-between border-t border-white/5 px-4 py-4">
                   <p className="text-xs text-white/50">
-                    Pronto para exportar {rowCount} resultado{rowCount !== 1 ? "s" : ""}
+                    Exporta {rowCount} linha{rowCount !== 1 ? "s" : ""} no layout de upload (7
+                    colunas, sem cabecalho, UTF-8 com BOM)
                   </p>
                   <button
                     onClick={() => void downloadCsv()}
                     className="liquid-glass-button inline-flex items-center gap-2 rounded-full border border-emerald-300/30 px-4 py-2 text-xs font-semibold text-white"
                   >
                     <Download className="h-3.5 w-3.5 text-emerald-300" />
-                    Exportar para Controle
+                    Exportar para controle
                   </button>
                 </div>
               </>
@@ -1018,7 +1259,7 @@ export function SerpOptimizer() {
                 </div>
                 <p className="text-sm font-medium text-white/80">Nenhum dado para mostrar</p>
                 <p className="mt-1 max-w-xs text-xs text-white/50">
-                  Importe um CSV para iniciar a fila batch.
+                  Importe um CSV para iniciar a fila.
                 </p>
               </div>
             )}

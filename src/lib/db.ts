@@ -1,4 +1,18 @@
+/**
+ * Camada de dados do SERP Optimizer sobre IndexedDB (lib `idb`).
+ *
+ * Banco `optmos-serp` com dois object stores:
+ *   - `rows`: uma entrada por linha do CSV, keyPath `id`.
+ *   - `meta`: cabecalho do arquivo (`csv-meta`) e estado da fila (`queue-state`).
+ *
+ * Invariante: os ids das linhas sao sempre 1..N contiguos, na ordem do CSV.
+ * `importCSVToIndexedDB` e o unico escritor de linhas novas e garante isso.
+ * `getRowsWindow(startIndex, limit)` depende dessa invariante para tratar o
+ * indice posicional da fila como id.
+ */
+
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import { isOutOfRange } from "./providers";
 import type { CsvRow } from "./store";
 
 const DB_NAME = "optmos-serp";
@@ -19,6 +33,7 @@ export interface QueueState {
   status: QueueStatus;
   currentIndex: number;
   lastError?: string;
+  errorCount?: number;
   updatedAt: number;
 }
 
@@ -49,10 +64,16 @@ const emptyMeta = (): CsvMeta => ({
 const emptyQueueState = (): QueueState => ({
   status: "idle",
   currentIndex: 0,
+  errorCount: 0,
   updatedAt: Date.now(),
 });
 
-function getDb() {
+/**
+ * Abre o banco uma vez por sessao. Se a abertura falhar, a promise NAO fica
+ * memorizada: a proxima chamada tenta de novo. Se outra aba apagar ou
+ * bloquear o banco, a conexao e descartada para ser reaberta.
+ */
+function getDb(): Promise<IDBPDatabase<OptmosDB>> {
   if (!dbPromise) {
     dbPromise = openDB<OptmosDB>(DB_NAME, DB_VERSION, {
       upgrade(db) {
@@ -63,6 +84,17 @@ function getDb() {
           db.createObjectStore("meta", { keyPath: "key" });
         }
       },
+      blocking() {
+        dbPromise?.then((db) => db.close()).catch(() => undefined);
+        dbPromise = null;
+      },
+      terminated() {
+        dbPromise = null;
+      },
+    });
+
+    dbPromise.catch(() => {
+      dbPromise = null;
     });
   }
 
@@ -89,22 +121,30 @@ export async function setCsvMeta(meta: CsvMeta): Promise<void> {
 }
 
 export async function setCsvRowCount(rowCount: number): Promise<void> {
-  const meta = await getCsvMeta();
-  await setCsvMeta({ ...meta, rowCount });
+  const db = await getDb();
+  const tx = db.transaction("meta", "readwrite");
+  const record = await tx.store.get(CSV_META_KEY);
+  const current = (record?.value as CsvMeta | undefined) ?? emptyMeta();
+  await tx.store.put({ key: CSV_META_KEY, value: { ...current, rowCount } });
+  await tx.done;
 }
 
 export async function getQueueState(): Promise<QueueState> {
   return getMetaValue<QueueState>(QUEUE_STATE_KEY, emptyQueueState());
 }
 
+/**
+ * Leitura e escrita na MESMA transacao, para que "pausar" e "avancar o
+ * indice" nunca se sobrescrevam em corrida.
+ */
 export async function setQueueState(next: Partial<QueueState>): Promise<QueueState> {
-  const current = await getQueueState();
-  const state: QueueState = {
-    ...current,
-    ...next,
-    updatedAt: Date.now(),
-  };
-  await setMetaValue(QUEUE_STATE_KEY, state);
+  const db = await getDb();
+  const tx = db.transaction("meta", "readwrite");
+  const record = await tx.store.get(QUEUE_STATE_KEY);
+  const current = (record?.value as QueueState | undefined) ?? emptyQueueState();
+  const state: QueueState = { ...current, ...next, updatedAt: Date.now() };
+  await tx.store.put({ key: QUEUE_STATE_KEY, value: state });
+  await tx.done;
   return state;
 }
 
@@ -114,16 +154,9 @@ export async function resetCsvData(fileName: string): Promise<void> {
   await tx.objectStore("rows").clear();
   await tx.objectStore("meta").put({
     key: CSV_META_KEY,
-    value: {
-      fileName,
-      rowCount: 0,
-      importedAt: Date.now(),
-    } satisfies CsvMeta,
+    value: { fileName, rowCount: 0, importedAt: Date.now() } satisfies CsvMeta,
   });
-  await tx.objectStore("meta").put({
-    key: QUEUE_STATE_KEY,
-    value: emptyQueueState(),
-  });
+  await tx.objectStore("meta").put({ key: QUEUE_STATE_KEY, value: emptyQueueState() });
   await tx.done;
 }
 
@@ -141,7 +174,7 @@ export async function putCsvRows(rows: CsvRow[]): Promise<void> {
 
   const db = await getDb();
   const tx = db.transaction("rows", "readwrite");
-  await Promise.all(rows.map((row) => tx.store.put(row)));
+  for (const row of rows) tx.store.put(row);
   await tx.done;
 }
 
@@ -150,6 +183,16 @@ export async function getCsvRow(id: number): Promise<CsvRow | undefined> {
   return db.get("rows", id);
 }
 
+export async function getCsvRows(ids: number[]): Promise<CsvRow[]> {
+  if (ids.length === 0) return [];
+  const db = await getDb();
+  const tx = db.transaction("rows");
+  const rows = await Promise.all(ids.map((id) => tx.store.get(id)));
+  await tx.done;
+  return rows.filter((row): row is CsvRow => Boolean(row));
+}
+
+/** Janela posicional: `startIndex` e 0-based, os ids comecam em 1. */
 export async function getRowsWindow(startIndex: number, limit: number): Promise<CsvRow[]> {
   if (limit <= 0) return [];
 
@@ -171,47 +214,115 @@ export async function getBatchRows(startIndex: number, limit: number): Promise<C
   return getRowsWindow(startIndex, limit);
 }
 
-export async function getAllCsvRows(): Promise<CsvRow[]> {
+/** Linhas que ficaram com erro de otimizacao, em ordem de id. */
+export async function getRowsWithErrors(limit = Infinity): Promise<CsvRow[]> {
   const db = await getDb();
   const rows: CsvRow[] = [];
   let cursor = await db.transaction("rows").store.openCursor();
 
-  while (cursor) {
-    rows.push(cursor.value);
+  while (cursor && rows.length < limit) {
+    if (cursor.value.optimizationError) rows.push(cursor.value);
     cursor = await cursor.continue();
   }
 
   return rows;
 }
 
+/** Linhas otimizadas cujo title ou description ficou fora da faixa de caracteres. */
+export async function getRowsOutOfRange(limit = Infinity): Promise<CsvRow[]> {
+  const db = await getDb();
+  const rows: CsvRow[] = [];
+  let cursor = await db.transaction("rows").store.openCursor();
+
+  while (cursor && rows.length < limit) {
+    if (!cursor.value.optimizationError && isOutOfRange(cursor.value)) rows.push(cursor.value);
+    cursor = await cursor.continue();
+  }
+
+  return rows;
+}
+
+export async function countRowsOutOfRange(): Promise<number> {
+  const db = await getDb();
+  let count = 0;
+  let cursor = await db.transaction("rows").store.openCursor();
+
+  while (cursor) {
+    if (!cursor.value.optimizationError && isOutOfRange(cursor.value)) count += 1;
+    cursor = await cursor.continue();
+  }
+
+  return count;
+}
+
+export async function countRowsWithErrors(): Promise<number> {
+  const db = await getDb();
+  let count = 0;
+  let cursor = await db.transaction("rows").store.openCursor();
+
+  while (cursor) {
+    if (cursor.value.optimizationError) count += 1;
+    cursor = await cursor.continue();
+  }
+
+  return count;
+}
+
+/**
+ * Percorre todas as linhas sem materializar o dataset inteiro em memoria.
+ * O callback recebe blocos de `chunkSize` linhas.
+ */
+export async function iterateCsvRows(
+  onChunk: (rows: CsvRow[]) => void | Promise<void>,
+  chunkSize = 500,
+): Promise<number> {
+  const db = await getDb();
+  let total = 0;
+  let buffer: CsvRow[] = [];
+  let cursor = await db.transaction("rows").store.openCursor();
+
+  while (cursor) {
+    buffer.push(cursor.value);
+    total += 1;
+    if (buffer.length >= chunkSize) {
+      const chunk = buffer;
+      buffer = [];
+      await onChunk(chunk);
+    }
+    cursor = await cursor.continue();
+  }
+
+  if (buffer.length > 0) await onChunk(buffer);
+  return total;
+}
+
 export async function updateCsvRows(
   updates: Array<Partial<CsvRow> & Pick<CsvRow, "id">>,
-): Promise<void> {
-  if (updates.length === 0) return;
+): Promise<number> {
+  if (updates.length === 0) return 0;
 
   const db = await getDb();
   const tx = db.transaction("rows", "readwrite");
+  let written = 0;
 
   for (const update of updates) {
     const current = await tx.store.get(update.id);
     if (!current) continue;
 
+    const hasNewContent = Boolean(update.newTitle || update.newDescription);
     const next: CsvRow = {
       ...current,
       ...update,
-      optimizedTitle: Boolean(update.newTitle ?? current.newTitle ?? current.optimizedTitle),
-      optimizedDesc: Boolean(
-        update.newDescription ?? current.newDescription ?? current.optimizedDesc,
-      ),
+      optimizedTitle: Boolean(update.newTitle ?? current.newTitle),
+      optimizedDesc: Boolean(update.newDescription ?? current.newDescription),
       optimizationError:
-        update.optimizationError ??
-        (update.newTitle || update.newDescription ? undefined : current.optimizationError),
-      loadingTitle: false,
-      loadingDesc: false,
+        update.optimizationError ?? (hasNewContent ? undefined : current.optimizationError),
     };
 
     await tx.store.put(next);
+    written += 1;
   }
 
   await tx.done;
+  return written;
 }

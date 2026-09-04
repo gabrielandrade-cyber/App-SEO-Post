@@ -4,8 +4,10 @@
   "compatibility_date": "2026-06-27",
   "compatibility_flags": ["nodejs_compat"],
   "main": "@tanstack/react-start/server-entry",
+  // Logs de invocacao ligados. Nenhuma chave de usuario aparece neles: as
+  // chaves trafegam no corpo do POST e a do Gemini vai em header, nunca na URL.
   "observability": {
-    "enabled": false,
+    "enabled": true,
     "head_sampling_rate": 1,
     "logs": {
       "enabled": true,
@@ -19,4 +21,7 @@
       "head_sampling_rate": 1,
     },
   },
+  // Token de acesso opcional dos endpoints. Defina como secret, nunca aqui:
+  //   npx wrangler secret put OPTMOS_ACCESS_TOKEN
+  // e cole o mesmo valor no painel do app (campo "Token de acesso").
 }

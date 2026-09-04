@@ -1,82 +1,98 @@
-# OPTMOS Hub - Documentação Oficial do Projeto
+# OPTMOS Hub - Documentacao do Projeto
 
-## 1. Identidade e Objetivo do Projeto
+Atualizada em 04/09/2026. O README.md traz o guia operacional (rodar, fazer deploy, formato do
+CSV). Este documento descreve o produto e as decisoes de arquitetura.
 
-O **OPTMOS** (anteriormente SERP Optimizer) é um Hub de Ferramentas focado em otimização para SEO e Web Performance. A sua identidade central gira em torno da filosofia **"Bring Your Own Key" (BYOK)**. Isto significa que o utilizador não paga subscrições mensais por serviços de Inteligência Artificial; em vez disso, liga as suas próprias chaves (API Keys) dos escalões gratuitos de grandes fornecedores para operar a máquina sem custos recorrentes.
+## 1. Identidade e objetivo
 
-**Principais Módulos Atuais:**
+O OPTMOS (antes SERP Optimizer) e um hub de ferramentas de SEO e performance web. A identidade
+central e o **BYOK (Bring Your Own Key)**: nao ha assinatura nem chave embutida. O usuario conecta a
+propria chave (free tier ou paga) do provedor que escolher, e o app funciona sem custo recorrente
+para quem o hospeda.
 
-1. **SERP Optimizer:** Processamento em lote de ficheiros CSV contendo URLs. A IA navega pelo contexto da URL e redige automaticamente `Meta Titles` e `Meta Descriptions` altamente otimizados para motores de pesquisa.
-2. **Image Optimizer:** Ferramenta focada em Performance Web (Core Web Vitals). Converte instantaneamente imagens pesadas (JPG/PNG) para o formato WebP via Client-Side Canvas, garantindo privacidade e velocidade. Simultaneamente, utiliza Inteligência Artificial Multimodal (Visão) para analisar o conteúdo visual da imagem e gerar descrições ricas para a tag `Alt` e `Nomes de Ficheiro` amigáveis para SEO.
+Modulos:
 
-## 2. Identidade Visual (Liquid Glass)
+1. **SERP Optimizer.** Processamento em lote de um CSV de URLs. O servidor rastreia cada pagina, a
+   IA escreve meta title e meta description novos e justifica cada escolha. As regras seguem as
+   diretrizes de SERP da liveSEO (title 50 a 58, description 150 a 160, contando espacos, sem marca
+   no title, imperativo na abertura, CTA variado no fechamento) e o tom de voz que o usuario
+   cadastra para a marca.
+2. **Image Optimizer.** Conversao de JPG/PNG/WebP para WebP no navegador (Canvas API, transparencia
+   preservada, maior lado limitado a 2048 px) e IA multimodal para gerar nome de arquivo e alt text.
 
-O projeto foi desenhado sob uma diretriz visual estrita denominada **"Liquid Glass"**.
+## 2. Identidade visual (Liquid Glass)
 
-- **Inspiração:** Design moderno da Apple (iOS) com foco em profundidade, desfoque (_backdrop-blur_) e transições suaves.
-- **Paleta de Cores:** Fundo escuro imersivo, com caixas transparentes (`bg-white/[0.02]`), bordas finas (`border-white/5`) e esferas de luzes néon (`blur-3xl` em tons Índigo, Fúcsia e Esmeralda).
-- **Sensação:** A aplicação deve parecer "viva", fluída e de alta performance. Os cantos das caixas são excessivamente arredondados (`rounded-3xl` / `rounded-[32px]`) para um aspeto amigável e premium.
+Inspiracao no design da Apple (iOS): profundidade, desfoque e transicoes suaves. Dark-only.
 
-## 3. Stack Tecnológico e Arquitetura
+- Fundo preto sob gradientes azuis e um degrade navy vertical, com duas orbes de luz (indigo e
+  fucsia) que derivam lentamente. Respeita `prefers-reduced-motion`.
+- Superficies em `GlassCard` (`src/components/ui/glass.tsx`): `rounded-3xl`, borda `white/7`,
+  fundo `white/3`, `backdrop-blur-2xl` e brilho especular na borda superior. A variante `distort`
+  aplica a distorcao real via filtro SVG `#glass-distortion`, usada nos cards de destaque.
+- Botoes em `.liquid-glass-button`: vidro fino com brilho que desliza no hover.
+- Acentos neon em indigo, fucsia, esmeralda e cyan. Cor por estado: cinza ocioso, indigo rodando,
+  ambar atencao, esmeralda concluido, rosa erro.
+- Cantos exagerados de proposito (`rounded-3xl`, `rounded-[32px]`).
 
-O projeto foi construído sobre uma arquitetura moderna preparada para alojamento _Serverless_ (idealmente na Vercel).
+## 3. Stack e arquitetura
 
-- **Frontend:** React com Vite.
-- **Routing:** TanStack Router (`@tanstack/react-router`) para navegação assíncrona baseada em ficheiros.
-- **Styling:** Tailwind CSS (com classes utilitárias cruas para Glassmorphism).
-- **Backend / API (BFF):** TanStack Start (`createServerFn`) para criar pontes seguras entre o cliente e o servidor ao contactar as APIs das Inteligências Artificiais. A chamada à API de visão e de texto ocorre no Servidor (Node) para contornar problemas de CORS.
-- **Manipulação de Ficheiros:** Conversão de imagens nativa com a Canvas API (sem backend pesado), e empacotamento em ZIP no browser usando `jszip`.
-- **Inteligência Artificial:** Integração via `@google/genai` e `openai` (compatível com a Groq e Cerebras). Modelos recomendados: `gemini-2.5-flash` para Google, `meta-llama/llama-4-scout-17b-16e-instruct` para a visão da Groq.
+- **Frontend:** React 19 + Vite 7, TanStack Router (roteamento por arquivo), Tailwind v4, shadcn/ui.
+- **Servidor:** TanStack Start rodando em **Cloudflare Workers** (`wrangler.jsonc`, worker `optmos`).
+  O endpoint `POST /api/optimize-batch` e a server function `optimizeVision` chamam as APIs de IA
+  a partir do Worker, com a chave enviada pelo cliente e usada so em memoria.
+- **Dados no navegador:** o CSV vai para o IndexedDB em blocos de 1000 linhas; a tabela e
+  virtualizada e so a janela visivel fica em memoria. A fila persiste o indice corrente, entao da
+  para fechar o navegador e retomar depois.
+- **Chaves:** ficam no localStorage cifradas em AES-GCM 256, com a `CryptoKey` (nao exportavel)
+  guardada num IndexedDB separado. Se a cifra nao estiver disponivel, as chaves ficam so na sessao;
+  nunca sao gravadas em texto puro.
+- **Hidratacao:** o estado inicial e identico no servidor e no cliente; o que esta salvo entra
+  depois, num efeito. Isso elimina divergencia de hidratacao no SSR.
 
-### Gestão de Estado (SettingsProvider)
+### Fluxo do SERP Optimizer
 
-Para garantir que o utilizador não tem de colocar as suas chaves de API repetidamente, a aplicação utiliza um **Provider Global** na raiz (`__root.tsx`). Este Provider extrai as configurações do `localStorage` de forma síncrona para não quebrar a hidratação do React, distribuindo as configurações (`settings`) e o método de atualização (`dispatch`) para todos os ecrãs de forma centralizada.
+1. Importacao do CSV (cabecalho por nome ou mapeamento posicional) para o IndexedDB. A base
+   anterior so e apagada quando a primeira linha valida do arquivo novo e encontrada.
+2. A fila envia lotes (20 URLs no ChatGPT, 10 no Gemini, 5 na Groq, 3 na Cerebras) para
+   `/api/optimize-batch`, com ate 3 requisicoes em paralelo no ChatGPT e 2 no Gemini. O
+   progresso so avanca pelo prefixo contiguo de lotes concluidos, e retomar nunca reenvia
+   linha ja otimizada.
+3. O servidor valida a origem da chamada, bloqueia alvos internos (SSRF), rastreia cada URL
+   (timeout 4 s, ate 200 KB de HTML, redirecionamentos revalidados) e extrai title, meta
+   description, H1, H2, primeiros paragrafos e o corpo, num contexto de ate 2400 caracteres em que
+   o corpo tem espaco garantido.
+4. O prompt combina as diretrizes de SERP, o tom de voz da marca (bloco obrigatorio, com instrucao
+   de extrair nome, posicionamento, persona, vocabulario e diferenciais) e o contexto rastreado,
+   marcado como dado bruto que nunca deve ser tratado como instrucao.
+5. O adapter chama o modelo em JSON estruturado, exige um resultado por id (segunda chance so para
+   os que faltaram) e manda os textos fora da faixa de caracteres para uma rodada de reparo.
+6. Toda linha volta com texto ou com `optimizationError`. Erros de chave, saldo ou cota
+   interrompem o lote, devolvem o que ja foi feito e pausam a fila com a mensagem certa; o botao
+   "Reprocessar erros" reenvia so as linhas que falharam.
 
----
+## 4. Provedores
 
-## 4. Como Rodar em Outros Computadores
+Fonte unica em `src/lib/providers.ts`. Modelos conferidos em 04/09/2026:
 
-Como o projeto utiliza Node.js e Vite, instalá-lo numa máquina nova demora menos de 5 minutos.
+| Provedor | Texto                   | Visao                   | Observacao                                                             |
+| -------- | ----------------------- | ----------------------- | ---------------------------------------------------------------------- |
+| ChatGPT  | `gpt-5.6-luna`          | `gpt-5.6-luna`          | rapido e barato (US$ 0,20/M entrada), contexto 1M, precisa de creditos |
+| Gemini   | `gemini-3.5-flash-lite` | `gemini-3.5-flash-lite` | modelo do Google para alto volume, contexto 1M                         |
+| Groq     | `openai/gpt-oss-120b`   | `qwen/qwen3.8-27b`      | ultrarrapido, free tier generoso                                       |
+| Cerebras | `gpt-oss-120b`          | sem visao               | ~3000 tokens/s, free tier apertado                                     |
 
-### Pré-requisitos
+Modelo descontinuado (404) cai para o proximo de `fallbackModels`; nenhum outro erro troca de
+modelo, para nunca mascarar um 429 ou 401 com a mensagem de outro modelo.
 
-- Ter o **Node.js** instalado (versão 18 ou superior). O Node.js inclui o NPM (gestor de pacotes).
-- Ter o **Git** instalado (opcional, mas recomendado para clonar).
+## 5. Seguranca dos endpoints
 
-### Passo a Passo da Instalação Local
+O app nao tem login. Duas barreiras protegem o Worker publicado: chamadas so sao aceitas da
+propria pagina (header `Sec-Fetch-Site`) e, se o secret `OPTMOS_ACCESS_TOKEN` existir, todo
+request precisa do header `x-optmos-token` com o mesmo valor (campo "Token de acesso" no painel).
+O rastreador recusa URLs de loopback, redes privadas, link-local e portas fora de 80/443.
 
-1. **Copiar os Ficheiros:**
-   Descomprima o projeto numa pasta ou clone-o através do GitHub.
+## 6. Como rodar e publicar
 
-2. **Abrir o Terminal:**
-   Navegue até à pasta raiz do projeto (onde está o ficheiro `package.json`).
-
-   ```bash
-   cd caminho/para/o/projeto/serp-studio-main
-   ```
-
-3. **Instalar as Dependências:**
-   O projeto tem bibliotecas como o Tailwind, Framer Motion e Lucide que precisam de ser descarregadas. Execute:
-
-   ```bash
-   npm install
-   # ou
-   npm i
-   ```
-
-4. **Arrancar o Servidor de Desenvolvimento:**
-   Para testar a aplicação na sua máquina, corra:
-   ```bash
-   npm run dev
-   ```
-   A consola irá devolver um URL local (normalmente `http://localhost:5173` ou `:8080`). Clique nele para abrir o Hub no navegador.
-
-### Preparação para Deploy (Vercel ou Netlify)
-
-Se desejar colocar o site no ar para qualquer pessoa aceder na internet:
-
-1. Crie uma conta na [Vercel](https://vercel.com/).
-2. Faça upload do projeto para um repositório no GitHub.
-3. No painel da Vercel, clique em "Add New Project" e importe o seu repositório.
-4. O _Framework Preset_ deverá ser automaticamente detetado como **Vite** ou **React**.
-5. Clique em Deploy. (A Vercel executa internamente o comando `npm run build` e expõe a pasta gerada).
+Ver README.md. Resumo: `npm install`, `npm run dev` para desenvolver, `npm run deploy` para
+publicar no Cloudflare com a conta logada no wrangler. O gerenciador padrao e o npm; o `bun.lock`
+antigo foi removido por estar desatualizado em relacao ao `package-lock.json`.

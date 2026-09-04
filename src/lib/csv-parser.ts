@@ -1,123 +1,162 @@
 /**
- * CSV Parser — PapaParse wrapper with POSITIONAL column mapping.
+ * Importacao de CSV para o IndexedDB, em streaming.
  *
- * Strategy:
- *   - 1st column → URL
- *   - 2nd column → Title
- *   - 3rd column → Meta Description (optional — empty string if absent)
+ * Mapeamento de colunas:
+ *   - Se a primeira linha for um cabecalho, as colunas sao encontradas por
+ *     nome (URL / Title / Description e variantes em portugues, incluindo os
+ *     nomes que o Screaming Frog exporta). Colunas extras sao ignoradas.
+ *   - Sem cabecalho, o mapeamento e posicional: 1a URL, 2a title, 3a description.
  *
- * If the CSV has headers that match known aliases (url, title, description),
- * those are used. Otherwise, falls back to column position.
- *
- * Supports files up to 10k+ lines (web worker for files >2MB).
+ * O arquivo e lido em blocos (modo `chunk` do papaparse, na thread principal:
+ * o modo worker nao suporta pause/resume) e gravado em lotes de FLUSH_SIZE
+ * linhas. A base anterior so e apagada depois que a primeira linha valida do
+ * arquivo novo e encontrada: um arquivo invalido nunca destroi o trabalho
+ * anterior.
  */
 
 import Papa from "papaparse";
 import { putCsvRows, resetCsvData, setCsvRowCount } from "./db";
 import type { CsvRow } from "./store";
 
-export interface ParseResult {
-  rows: CsvRow[];
-  errors: string[];
-}
-
 export interface ImportProgress {
   imported: number;
+}
+
+export interface ColumnMapping {
+  url: number;
+  title: number | null;
+  description: number | null;
+  /** true quando a primeira linha foi reconhecida como cabecalho. */
+  byName: boolean;
 }
 
 export interface ImportResult {
   rowsImported: number;
   errors: string[];
+  warnings: string[];
+  mapping: ColumnMapping | null;
 }
 
 const FLUSH_SIZE = 1000;
+const CHUNK_BYTES = 1024 * 1024;
+const MAX_WARNINGS = 3;
+
+const URL_HEADERS = new Set([
+  "url",
+  "urls",
+  "address",
+  "endereco",
+  "link",
+  "links",
+  "pagina",
+  "page",
+  "url da pagina",
+  "landing page",
+]);
+
+function normalizeHeader(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 function looksLikeUrl(value: string): boolean {
-  const firstCell = value.trim().toLowerCase();
-  return firstCell.includes("http") || firstCell.includes("www.") || firstCell.includes(".");
+  const cell = value.trim().toLowerCase();
+  if (!cell) return false;
+  return (
+    /^https?:\/\//.test(cell) ||
+    cell.startsWith("www.") ||
+    cell.startsWith("/") ||
+    /^[a-z0-9-]+(\.[a-z0-9-]+)+(\/|$)/.test(cell)
+  );
 }
 
 /**
- * Parse a CSV File and return rows.
- *
- * Uses positional mapping: col 1 = URL, col 2 = Title, col 3 = Description.
- * If the file has no 3rd column, description defaults to empty string.
+ * Decide se a primeira linha e cabecalho e, se for, onde estao as colunas.
+ * Retorna null quando a linha ja e dado (sem cabecalho).
  */
-export function parseCSV(file: File): Promise<ParseResult> {
-  return new Promise((resolve) => {
-    Papa.parse(file, {
-      // Parse WITHOUT header mode so we always get arrays and can map by position
-      header: false,
-      skipEmptyLines: true,
-      // Enable worker for large files to avoid blocking the main thread
-      worker: file.size > 2 * 1024 * 1024, // >2 MB → use web worker
-      complete(results) {
-        const rawRows = results.data as string[][];
+export function detectColumnMapping(firstRow: string[]): ColumnMapping | null {
+  const cells = firstRow.map((cell) => normalizeHeader(cell ?? ""));
 
-        if (rawRows.length === 0) {
-          resolve({ rows: [], errors: ["O ficheiro CSV está vazio."] });
-          return;
-        }
+  let url: number | null = null;
+  let title: number | null = null;
+  let description: number | null = null;
 
-        // Need at least 1 column (URL); Title and Description are optional
-        if (rawRows[0].length < 1) {
-          resolve({
-            rows: [],
-            errors: [
-              "O CSV precisa de pelo menos 1 coluna (URL). Verifique o formato do ficheiro.",
-            ],
-          });
-          return;
-        }
-
-        // ─── Detect if the first row is a header row ──────────────────
-        // Heuristic: if the first cell looks like a URL (contains "." or "http")
-        // then there's no header row. Otherwise, skip the first row as a header.
-        const dataRows = looksLikeUrl(rawRows[0][0] ?? "") ? rawRows : rawRows.slice(1);
-
-        // ─── Map positional columns to typed rows ─────────────────────
-        const rows: CsvRow[] = dataRows
-          .filter((cols) => (cols[0] ?? "").trim().length > 0) // skip empty URL rows
-          .map((cols, i) => ({
-            id: i + 1,
-            url: (cols[0] ?? "").trim(),
-            title: (cols[1] ?? "").trim(),
-            description: (cols[2] ?? "").trim(), // empty if CSV has only 2 columns
-          }));
-
-        if (rows.length === 0) {
-          resolve({ rows: [], errors: ["Nenhuma linha válida encontrada no CSV."] });
-          return;
-        }
-
-        resolve({ rows, errors: [] });
-      },
-      error(err) {
-        resolve({ rows: [], errors: [`Erro ao ler o CSV: ${err.message}`] });
-      },
-    });
+  cells.forEach((cell, index) => {
+    if (
+      url === null &&
+      (URL_HEADERS.has(cell) || cell === "url atual" || cell.startsWith("url "))
+    ) {
+      url = index;
+      return;
+    }
+    if (description === null && /(description|descricao)/.test(cell)) {
+      description = index;
+      return;
+    }
+    if (title === null && /(^|\s)(title|titulo)(\s|$|\d)/.test(cell)) {
+      title = index;
+    }
   });
+
+  if (url !== null) {
+    return { url, title, description, byName: true };
+  }
+
+  // Nenhuma coluna nomeada. Se a primeira celula parece URL, nao ha cabecalho.
+  if (looksLikeUrl(firstRow[0] ?? "")) return null;
+
+  // Texto sem cara de URL na primeira celula: cabecalho generico, mapeamento posicional.
+  return { url: 0, title: 1, description: 2, byName: false };
+}
+
+function describePapaError(error: Papa.ParseError): string {
+  const where = typeof error.row === "number" ? ` (linha ${error.row + 1})` : "";
+  switch (error.code) {
+    case "UndetectableDelimiter":
+      return "Nao foi possivel detectar o separador de colunas; o arquivo pode ter uma coluna so.";
+    case "MissingQuotes":
+      return `Aspas abertas sem fechar${where}. Parte do conteudo pode ter sido colada numa unica celula.`;
+    case "TooFewFields":
+      return `Linha com menos colunas que o esperado${where}.`;
+    case "TooManyFields":
+      return `Linha com mais colunas que o esperado${where}.`;
+    default:
+      return `${error.message}${where}`;
+  }
 }
 
 export async function importCSVToIndexedDB(
   file: File,
   onProgress?: (progress: ImportProgress) => void,
 ): Promise<ImportResult> {
-  await resetCsvData(file.name);
-
   return new Promise((resolve) => {
     const errors: string[] = [];
+    const warnings: string[] = [];
+    const seenWarningCodes = new Set<string>();
+    let mapping: ColumnMapping | null = null;
+    let headerChecked = false;
     let buffer: CsvRow[] = [];
     let imported = 0;
-    let nextId = 1;
-    let firstRowChecked = false;
+    let dbReady = false;
     let settled = false;
-    let pendingFlush = Promise.resolve();
+    let pendingFlush: Promise<void> = Promise.resolve();
+
+    const ensureDbReset = async () => {
+      if (dbReady) return;
+      await resetCsvData(file.name);
+      dbReady = true;
+    };
 
     const flush = async () => {
       if (buffer.length === 0) return;
       const rowsToStore = buffer;
       buffer = [];
+      await ensureDbReset();
       await putCsvRows(rowsToStore);
       await setCsvRowCount(imported);
       onProgress?.({ imported });
@@ -126,51 +165,83 @@ export async function importCSVToIndexedDB(
     const finish = async () => {
       if (settled) return;
       settled = true;
-      await pendingFlush;
-      await flush();
-      await setCsvRowCount(imported);
 
-      if (imported === 0 && errors.length === 0) {
-        errors.push("Nenhuma linha valida encontrada no CSV.");
+      try {
+        await pendingFlush;
+        await flush();
+        if (dbReady) await setCsvRowCount(imported);
+      } catch (err) {
+        errors.push(
+          `Falha ao gravar as linhas no navegador: ${err instanceof Error ? err.message : "erro desconhecido"}.`,
+        );
       }
 
-      resolve({ rowsImported: imported, errors });
+      if (imported === 0 && errors.length === 0) {
+        errors.push(
+          "Nenhuma linha valida encontrada no CSV (a primeira coluna precisa ser a URL).",
+        );
+      }
+
+      resolve({ rowsImported: imported, errors, warnings, mapping });
+    };
+
+    const noteWarnings = (parseErrors: Papa.ParseError[]) => {
+      for (const error of parseErrors) {
+        if (seenWarningCodes.has(error.code)) continue;
+        seenWarningCodes.add(error.code);
+        if (warnings.length < MAX_WARNINGS) warnings.push(describePapaError(error));
+      }
     };
 
     Papa.parse<string[]>(file, {
       header: false,
-      skipEmptyLines: true,
-      worker: file.size > 2 * 1024 * 1024,
-      step(result, parser) {
-        const cols = result.data;
+      skipEmptyLines: "greedy",
+      chunkSize: CHUNK_BYTES,
+      chunk(results, parser) {
+        if (settled) return;
+        if (results.errors?.length) noteWarnings(results.errors);
 
-        if (!firstRowChecked) {
-          firstRowChecked = true;
+        const rows = results.data;
+        let startAt = 0;
 
-          if (!cols || cols.length < 1) {
-            errors.push("O CSV precisa de pelo menos 1 coluna (URL).");
-            parser.abort();
-            void finish();
-            return;
-          }
-
-          if (!looksLikeUrl(cols[0] ?? "")) return;
+        if (!headerChecked && rows.length > 0) {
+          headerChecked = true;
+          const detected = detectColumnMapping(rows[0]);
+          // null = a primeira linha ja e dado; qualquer mapping = havia cabecalho.
+          mapping = detected ?? { url: 0, title: 1, description: 2, byName: false };
+          startAt = detected ? 1 : 0;
         }
 
-        const url = (cols[0] ?? "").trim();
-        if (!url) return;
+        const map = mapping ?? { url: 0, title: 1, description: 2, byName: false };
 
-        buffer.push({
-          id: nextId++,
-          url,
-          title: (cols[1] ?? "").trim(),
-          description: (cols[2] ?? "").trim(),
-        });
-        imported += 1;
+        for (let index = startAt; index < rows.length; index += 1) {
+          const cols = rows[index];
+          const url = (cols[map.url] ?? "").trim();
+          if (!url) continue;
+
+          imported += 1;
+          buffer.push({
+            id: imported,
+            url,
+            title: map.title === null ? "" : (cols[map.title] ?? "").trim(),
+            description: map.description === null ? "" : (cols[map.description] ?? "").trim(),
+          });
+        }
+
+        onProgress?.({ imported });
 
         if (buffer.length >= FLUSH_SIZE) {
           parser.pause();
-          pendingFlush = pendingFlush.then(flush).then(() => parser.resume());
+          pendingFlush = pendingFlush
+            .then(flush)
+            .then(() => parser.resume())
+            .catch((err) => {
+              errors.push(
+                `Falha ao gravar as linhas no navegador: ${err instanceof Error ? err.message : "erro desconhecido"}.`,
+              );
+              parser.abort();
+              void finish();
+            });
         }
       },
       complete() {
