@@ -1,131 +1,138 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { UploadCloud, FileArchive, Settings2, ShieldCheck, Tag, Type } from "lucide-react";
+import { GlassCard, GlowOrb } from "@/components/ui/glass";
+import { PROVIDER_META } from "@/lib/providers";
 
 export const Route = createFileRoute("/como-usar-imagens")({
+  head: () => ({
+    meta: [
+      { title: "Como usar o Image Optimizer | OPTMOS" },
+      {
+        name: "description",
+        content:
+          "Passo a passo do Image Optimizer: converter imagens para WebP no navegador e gerar nomes de arquivo e alt texts com IA de visao.",
+      },
+    ],
+  }),
   component: ComoUsarImagens,
 });
 
 function ComoUsarImagens() {
   return (
-    <main className="min-h-screen pt-8 pb-20 px-4">
+    <main className="px-4 pb-20 pt-8">
       <div className="mx-auto max-w-4xl space-y-12">
-        <div className="text-center space-y-4">
-          <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-400 to-fuchsia-500 shadow-[0_0_30px_-5px_rgba(168,85,247,0.6)] mb-2">
+        <div className="space-y-4 text-center">
+          <div className="mb-2 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-400 to-fuchsia-500 shadow-[0_0_30px_-5px_rgba(168,85,247,0.6)]">
             <Settings2 className="h-8 w-8 text-white" />
           </div>
           <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl">
             Como usar o Image Optimizer
           </h1>
           <p className="mx-auto max-w-2xl text-lg text-white/60">
-            Aprenda a transformar as suas imagens pesadas em WebP otimizados, utilizando a Visão da
-            Inteligência Artificial para gerar Nomes de Ficheiro e Alt Texts de alta conversão.
+            Transforme imagens pesadas em WebP e use a visao da IA para gerar nomes de arquivo e alt
+            texts descritivos.
           </p>
         </div>
 
         <div className="space-y-8">
-          {/* Passo 1 */}
-          <div className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 transition-all hover:bg-white/10">
-            <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-indigo-500/10 blur-3xl transition-all group-hover:bg-indigo-500/20" />
+          <GlassCard className="group overflow-hidden p-8" distort>
+            <GlowOrb color="indigo" className="-right-20 -top-20" />
             <div className="relative z-10 space-y-6">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-300">
                 <UploadCloud className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white mb-2">
-                  1. Arraste as suas imagens (PNG ou JPG)
+                <h3 className="mb-2 text-xl font-bold text-white">
+                  1. Arraste as imagens (PNG, JPG ou WebP)
                 </h3>
-                <p className="text-white/60 leading-relaxed">
-                  Na aba <b>Workspace</b>, arraste as suas imagens ou clique na área de upload. A
-                  nossa tecnologia{" "}
-                  <b>
-                    converte automaticamente e instantaneamente as imagens para WebP no seu
-                    navegador
-                  </b>
-                  . Este processo é super rápido e nenhuma imagem pesada é enviada para servidores
-                  de terceiros, garantindo máxima privacidade e velocidade.
+                <p className="leading-relaxed text-white/60">
+                  No <b>Workspace</b>, arraste as imagens ou clique na area de upload. A conversao
+                  para WebP acontece <b>no seu navegador</b>, sem upload: a transparencia de PNG e
+                  preservada e a maior dimensao e limitada a 2048 px, o que ja resolve a maior parte
+                  do peso em fotos de celular. Nada sai do computador nessa etapa.
                 </p>
               </div>
             </div>
-          </div>
+          </GlassCard>
 
-          {/* Passo 2 */}
-          <div className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 transition-all hover:bg-white/10">
-            <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-fuchsia-500/10 blur-3xl transition-all group-hover:bg-fuchsia-500/20" />
+          <GlassCard className="group overflow-hidden p-8">
+            <GlowOrb color="fuchsia" className="-right-20 -top-20" />
             <div className="relative z-10 space-y-6">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-fuchsia-500/20 text-fuchsia-300">
                 <ShieldCheck className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white mb-2">
-                  2. Valide as Configurações de IA
-                </h3>
-                <p className="text-white/60 leading-relaxed">
-                  Para utilizar a Inteligência Artificial nas imagens, certifique-se que adicionou a
-                  chave do <b>Google Gemini</b> ou <b>Groq</b> na aba de opções.
+                <h3 className="mb-2 text-xl font-bold text-white">2. Escolha a IA de visao</h3>
+                <p className="leading-relaxed text-white/60">
+                  A IA de visao e uma escolha separada da IA do SERP Optimizer, entao trocar aqui
+                  nao mexe na fila de SERP. Opcoes: <b>Gemini</b> (
+                  {PROVIDER_META.gemini.visionModel}), <b>ChatGPT</b> (
+                  {PROVIDER_META.openai.visionModel}) e <b>Groq</b> (
+                  {PROVIDER_META.groq.visionModel}). A chave e a mesma que voce ja usa para esse
+                  provedor.
                   <br />
                   <br />
-                  <span className="text-amber-400">Nota Importante:</span> O modelo <b>Cerebras</b>{" "}
-                  (disponível no Otimizador de SERP) não possui olhos virtuais (modelos
-                  multimodais). Se tiver o Cerebras ativado, a ferramenta de Imagens irá utilizar o
-                  Gemini automaticamente por segurança.
+                  <span className="text-amber-400">Privacidade:</span> os botoes{" "}
+                  <b>Otimizar nome</b> e <b>Gerar alt text</b> enviam a imagem (ja convertida e
+                  comprimida, no maximo 4 MB) para a API do provedor escolhido, com a sua chave. Se
+                  o material for confidencial, use so a conversao para WebP.
                 </p>
               </div>
             </div>
-          </div>
+          </GlassCard>
 
-          {/* Passo 3 */}
           <div className="grid gap-8 md:grid-cols-2">
-            <div className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 transition-all hover:bg-white/10">
+            <GlassCard className="group overflow-hidden p-8">
               <div className="relative z-10 space-y-6">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-300">
                   <Tag className="h-6 w-6" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-white mb-2">3. Otimizar Nomes</h3>
-                  <p className="text-white/60 leading-relaxed text-sm">
-                    Clique em <b>Otimizar Nome</b>. A IA vai "olhar" para a sua imagem e gerar um
-                    nome de ficheiro minúsculo, separado por hifens (ex:{" "}
-                    <i>sapato-pele-castanho.webp</i>), perfeito para os crawlers da Google.
+                  <h3 className="mb-2 text-xl font-bold text-white">3. Otimizar nome</h3>
+                  <p className="text-sm leading-relaxed text-white/60">
+                    A IA olha para a imagem e sugere um nome de arquivo em minusculas, sem acentos e
+                    separado por hifens (ex.: <i>sapato-couro-marrom.webp</i>). O nome passa por uma
+                    limpeza final, entao nunca sai com hifen sobrando nem caractere invalido.
                   </p>
                 </div>
               </div>
-            </div>
+            </GlassCard>
 
-            <div className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 transition-all hover:bg-white/10">
+            <GlassCard className="group overflow-hidden p-8">
               <div className="relative z-10 space-y-6">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500/20 text-cyan-300">
                   <Type className="h-6 w-6" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-white mb-2">4. Gerar Alt Text</h3>
-                  <p className="text-white/60 leading-relaxed text-sm">
-                    O <b>Alt Text</b> é crucial para Acessibilidade e SEO. Clique no botão e a IA
-                    criará uma descrição concisa (máximo de 120 caracteres) detalhando o conteúdo
-                    visual da imagem. Pode copiar o texto com um único clique!
+                  <h3 className="mb-2 text-xl font-bold text-white">4. Gerar alt text</h3>
+                  <p className="text-sm leading-relaxed text-white/60">
+                    O alt text e essencial para acessibilidade e SEO. A IA escreve uma descricao
+                    objetiva do que aparece na imagem, limitada a 125 caracteres (o app corta o
+                    excedente na ultima palavra inteira). Copie com um clique.
                   </p>
                 </div>
               </div>
-            </div>
+            </GlassCard>
           </div>
 
-          {/* Passo 4 */}
-          <div className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-8 transition-all hover:bg-white/10">
-            <div className="absolute -left-20 -top-20 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl transition-all group-hover:bg-emerald-500/20" />
+          <GlassCard className="group overflow-hidden p-8">
+            <GlowOrb color="emerald" className="-left-20 -top-20" />
             <div className="relative z-10 space-y-6">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/20 text-emerald-300">
                 <FileArchive className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white mb-2">5. Exportação Global (ZIP)</h3>
-                <p className="text-white/60 leading-relaxed">
-                  Quando terminar de otimizar os nomes e os tamanhos (se quiser usar o botão
-                  Compressão Max), basta clicar no botão <b>Descarregar (ZIP)</b> no topo da lista.
-                  A aplicação irá compilar nativamente todas as imagens WebP num único pacote pronto
-                  a importar para o seu CMS (WordPress, Shopify, etc).
+                <h3 className="mb-2 text-xl font-bold text-white">5. Baixar o ZIP</h3>
+                <p className="leading-relaxed text-white/60">
+                  Quando terminar (use <b>Compressao max</b> se precisar de arquivos menores),
+                  clique em <b>Baixar ZIP</b>. So entram no pacote as imagens ja convertidas para
+                  WebP; nomes repetidos ganham um sufixo numerico para nada ser sobrescrito. O ZIP e
+                  montado no navegador e fica pronto para subir no CMS (WordPress, Shopify,
+                  VTEX...).
                 </p>
               </div>
             </div>
-          </div>
+          </GlassCard>
         </div>
       </div>
     </main>

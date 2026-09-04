@@ -1,0 +1,37 @@
+name: CI
+
+# Valida cada push e PR: typecheck, lint, build e dry-run do wrangler.
+# Nao publica nada. O deploy continua manual: `npm run deploy`.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Testes do escalonador
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Wrangler dry-run
+        run: npx wrangler deploy --dry-run

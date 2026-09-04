@@ -1,5 +1,5 @@
 {
-  "name": "tanstack_start_ts",
+  "name": "optmos",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -9,10 +9,15 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "deploy": "vite build && wrangler deploy",
+    "deploy:dry": "vite build && wrangler deploy --dry-run",
+    "test": "esbuild tests/batch-scheduler.test.ts --bundle --platform=node --format=cjs --log-level=warning --outfile=node_modules/.cache/optmos/batch-scheduler.test.cjs && node node_modules/.cache/optmos/batch-scheduler.test.cjs && esbuild tests/serp-fit.test.ts --bundle --platform=node --format=cjs --log-level=warning --outfile=node_modules/.cache/optmos/serp-fit.test.cjs && node node_modules/.cache/optmos/serp-fit.test.cjs"
   },
   "dependencies": {
-    "@cloudflare/vite-plugin": "^1.25.5",
+    "@cloudflare/vite-plugin": "^1.54.4",
     "@google/genai": "^1.51.0",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
@@ -47,8 +52,8 @@
     "@tanstack/react-start": "^1.167.14",
     "@tanstack/react-virtual": "^3.13.25",
     "@tanstack/router-plugin": "^1.167.10",
-    "class-variance-authority": "^0.7.1",
     "cheerio": "^1.2.0",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
@@ -92,6 +97,7 @@
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "wrangler": "^4.129.0"
   }
 }
